@@ -1,0 +1,52 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+backend/fastapi/.venv/
+backend/fastapi/*.db
+backend/fastapi/*.db.*
+
+# Node / frontend
+node_modules/
+client/node_modules/
+client/dist/
+client/dist-deploy.tar.gz
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local data, imports, exports, and legacy archives
+legacy-assets/
+import/
+backups/
+*.xls
+*.xlsx
+*.tsv
+*.csv
+*.sql
+
+# Local working notes and temporary migration/deploy scripts
+WORKLOG_*.md
+.tmp_*
+tmp_*
+patch.py
+patch_*.py
+patch_*.css
+patch_*.txt
+AuthPortal.vue_orig
+AuthPortal.vue_modified
+
+# OS / editor
+.DS_Store

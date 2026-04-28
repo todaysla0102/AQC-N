@@ -1,0 +1,9 @@
+[Unit]
+Description=Safe Docker cleanup for unused images and cache
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/docker-safe-prune.conf
+ExecStart=/usr/local/sbin/docker-safe-prune.sh

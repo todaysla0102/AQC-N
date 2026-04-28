@@ -1,0 +1,88 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: aqc-n-db
+    restart: always
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --performance-schema=OFF
+    environment:
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - aqc_mysql_data:/var/lib/mysql
+      - ./backend/mysql/conf.d:/etc/mysql/conf.d:ro
+    mem_limit: ${DB_MEM_LIMIT:-640m}
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: ./backend/fastapi
+    container_name: aqc-n-api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS:-1}
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_NAME: AQC-N API
+      API_PREFIX: /api
+      SECRET_KEY: ${SECRET_KEY}
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-12}
+      DB_POOL_MAX_OVERFLOW: ${DB_POOL_MAX_OVERFLOW:-24}
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-30}
+      DB_POOL_RECYCLE: ${DB_POOL_RECYCLE:-3600}
+      TOKEN_EXPIRE_DAYS: ${TOKEN_EXPIRE_DAYS}
+      TOKEN_BYTES: ${TOKEN_BYTES}
+      ENABLE_LOCAL_LOGIN: ${ENABLE_LOCAL_LOGIN}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      SYMUSE_API_BASE: ${SYMUSE_API_BASE}
+      SYMUSE_CLIENT_ID: ${SYMUSE_CLIENT_ID}
+      SYMUSE_CLIENT_SECRET: ${SYMUSE_CLIENT_SECRET}
+      SYMUSE_AUTH_PAGE: ${SYMUSE_AUTH_PAGE}
+      SYMUSE_STATE_EXPIRE_SECONDS: ${SYMUSE_STATE_EXPIRE_SECONDS}
+      SYMUSE_STATE_REQUIRED: ${SYMUSE_STATE_REQUIRED}
+      SYMUSE_STATE_IP_STRICT: ${SYMUSE_STATE_IP_STRICT}
+      AQCO_SQL_PATH: ${AQCO_SQL_PATH:-/legacy-data/whaqc_data.sql}
+      SYMUSE_AQC_SYNC_ENABLED: ${SYMUSE_AQC_SYNC_ENABLED:-true}
+      SYMUSE_ADMIN_ACCOUNT: ${SYMUSE_ADMIN_ACCOUNT:-}
+      SYMUSE_ADMIN_PASSWORD: ${SYMUSE_ADMIN_PASSWORD:-}
+      AQC_ORDER_UPLOAD_API_URL: ${AQC_ORDER_UPLOAD_API_URL:-https://b.kuaidi100.com/v5/open/api/send}
+      AQC_ORDER_UPLOAD_APPID: ${AQC_ORDER_UPLOAD_APPID:-}
+      AQC_ORDER_UPLOAD_APPSECRET: ${AQC_ORDER_UPLOAD_APPSECRET:-}
+      AQC_ORDER_UPLOAD_APPUID: ${AQC_ORDER_UPLOAD_APPUID:-}
+      AQC_ORDER_UPLOAD_TIMEOUT: ${AQC_ORDER_UPLOAD_TIMEOUT:-20}
+      AQC_ORDER_UPLOAD_SENDER_USER_ID: ${AQC_ORDER_UPLOAD_SENDER_USER_ID:-1}
+      AQC_ORDER_UPLOAD_SENDER_NAME: ${AQC_ORDER_UPLOAD_SENDER_NAME:-}
+      AQC_ORDER_UPLOAD_SENDER_MOBILE: ${AQC_ORDER_UPLOAD_SENDER_MOBILE:-}
+      AQC_ORDER_UPLOAD_SENDER_ADDR: ${AQC_ORDER_UPLOAD_SENDER_ADDR:-}
+    volumes:
+      - ./legacy-assets/aqc-o/database:/legacy-data:ro
+    mem_limit: ${API_MEM_LIMIT:-640m}
+    expose:
+      - "8000"
+
+  web:
+    build:
+      context: ./client
+    container_name: aqc-n-web
+    restart: always
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+volumes:
+  aqc_mysql_data:

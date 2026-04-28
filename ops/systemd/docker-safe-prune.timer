@@ -1,0 +1,11 @@
+[Unit]
+Description=Run safe Docker cleanup every day
+
+[Timer]
+OnCalendar=*-*-* 04:35:00
+RandomizedDelaySec=15m
+Persistent=true
+Unit=docker-safe-prune.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,25 @@
+{
+  "name": "AQC-N 控制台",
+  "short_name": "AQC-N",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8f8f8",
+  "theme_color": "#f8f8f8",
+  "icons": [
+    {
+      "src": "/icon-192-light.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512-light.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/aqc-logo-home-l.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

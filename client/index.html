@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link id="app-favicon-svg" rel="icon" type="image/svg+xml" href="/aqc-logo-home-l.svg" />
+    <link id="app-favicon-png" rel="icon" type="image/png" sizes="512x512" href="/aqc-logo-home-l.png" />
+    <link id="app-favicon-png-192" rel="icon" type="image/png" sizes="192x192" href="/icon-192-light.png" />
+    <link id="app-apple-touch-icon" rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-light.png" />
+    <link id="app-manifest" rel="manifest" href="/site-light.webmanifest" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="AQC-N 控制台" />
+    <meta id="app-theme-color" name="theme-color" content="#f8f8f8" />
+    <meta property="og:image" content="/icon-512-light.png" />
+    <meta name="twitter:image" content="/icon-512-light.png" />
+    <script>
+      ;(() => {
+        const THEME_KEY = 'aqc_n_theme_mode'
+
+        function resolveThemeIsDark() {
+          try {
+            const mode = (localStorage.getItem(THEME_KEY) || '').trim()
+            if (mode === 'dark') return true
+            if (mode === 'light') return false
+          } catch (error) {
+            console.warn('Failed to read theme mode from localStorage', error)
+          }
+          return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches
+        }
+
+        function applyThemeAssets(isDark) {
+          const suffix = isDark ? 'dark' : 'light'
+          const themeColor = isDark ? '#0f0f0f' : '#f8f8f8'
+          const mappings = [
+            ['app-favicon-svg', `/aqc-logo-home-${isDark ? 'd' : 'l'}.svg`],
+            ['app-favicon-png', `/aqc-logo-home-${isDark ? 'd' : 'l'}.png`],
+            ['app-favicon-png-192', `/icon-192-${suffix}.png`],
+            ['app-apple-touch-icon', `/apple-touch-icon-${suffix}.png`],
+            ['app-manifest', `/site-${suffix}.webmanifest`],
+          ]
+          mappings.forEach(([id, href]) => {
+            const element = document.getElementById(id)
+            if (element) {
+              element.setAttribute('href', href)
+            }
+          })
+          const themeColorMeta = document.getElementById('app-theme-color')
+          if (themeColorMeta) {
+            themeColorMeta.setAttribute('content', themeColor)
+          }
+        }
+
+        window.__AQC_APPLY_THEME_ASSETS__ = applyThemeAssets
+        applyThemeAssets(resolveThemeIsDark())
+      })()
+    </script>
+    <title>AQC-N 控制台</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

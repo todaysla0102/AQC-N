@@ -1,0 +1,17 @@
+[mysqld]
+performance_schema=OFF
+skip_name_resolve=ON
+innodb_default_row_format=dynamic
+innodb_buffer_pool_size=256M
+innodb_buffer_pool_instances=1
+innodb_log_buffer_size=16M
+max_connections=60
+table_open_cache=256
+tmp_table_size=16M
+max_heap_table_size=16M
+sort_buffer_size=256K
+read_buffer_size=128K
+read_rnd_buffer_size=256K
+join_buffer_size=256K
+thread_stack=256K
+thread_cache_size=8

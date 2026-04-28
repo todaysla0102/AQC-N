@@ -1,0 +1,6 @@
+.venv
+__pycache__
+*.pyc
+aqc_n_test.db
+aqc_n_test.db.bak
+.DS_Store

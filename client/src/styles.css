@@ -6926,6 +6926,26 @@ button.work-order-type-card {
 
 .work-order-allocation-table-shell {
   overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.work-order-allocation-table-shell .work-order-allocation-table {
+  width: 100%;
+  min-width: 100%;
+}
+
+.work-order-allocation-table-shell .el-table__inner-wrapper,
+.work-order-allocation-table-shell .el-table__body-wrapper,
+.work-order-allocation-table-shell .el-scrollbar,
+.work-order-allocation-table-shell .el-scrollbar__wrap {
+  overflow-y: auto !important;
+}
+
+.work-order-allocation-table-shell .el-table__header-wrapper th.el-table__cell,
+.work-order-allocation-table-shell .el-table__fixed-header-wrapper th.el-table__cell {
+  background: color-mix(in srgb, var(--bg-elevated) 96%, transparent);
+  box-shadow: inset 0 -1px 0 var(--border-light);
+  z-index: 15;
 }
 
 .work-order-allocation-goods-cell {

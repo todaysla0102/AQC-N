@@ -2262,10 +2262,12 @@
 
           <div class="table-shell open-table-shell work-order-allocation-table-shell">
             <el-table
+              class="work-order-allocation-table"
               :data="allocationPagedRows"
               border
               stripe
               row-key="workOrderItemId"
+              :max-height="allocationTableMaxHeight"
               empty-text="暂无可分配商品"
               @sort-change="onAllocationTableSortChange"
             >
@@ -2275,7 +2277,7 @@
                     <strong>{{ row.goodsName || row.barcode || '-' }}</strong>
                     <span v-if="row.brand || row.series">{{ [row.brand, row.series].filter(Boolean).join(' / ') }}</span>
                     <small>单价 ¥ {{ formatMoney(row.unitPrice) }}</small>
-                    <small>原单数量 {{ row.plannedQuantity }}，已分配 {{ allocationRowAssignedQuantity(row) }}</small>
+                    <small>原单/库存数量 {{ formatAllocationOriginalStockQuantity(row) }}，已分配 {{ allocationRowAssignedQuantity(row) }}</small>
                   </div>
                 </template>
               </el-table-column>
@@ -2286,7 +2288,7 @@
                 :label="displayShopName(target.shortName || target.name)"
                 min-width="196"
               >
-                <el-table-column label="本次变动库存" min-width="120" align="center">
+                <el-table-column label="变动库存" min-width="120" align="center">
                   <template #default="{ row }">
                     <input
                       :value="String(getAllocationQuantity(row, target.id))"
@@ -2299,7 +2301,7 @@
                     />
                   </template>
                 </el-table-column>
-                <el-table-column label="当前库存" min-width="92" align="center">
+                <el-table-column label="库存" min-width="92" align="center">
                   <template #default="{ row }">{{ getAllocationCurrentStock(row, target.id) }}</template>
                 </el-table-column>
               </el-table-column>
@@ -2906,6 +2908,7 @@ const allocationWarningLines = computed(() => buildAllocationWarnings())
 const allocationWarningCount = computed(() => allocationWarningLines.value.length)
 const allocationItemsPageCount = computed(() => Math.max(1, Math.ceil(allocationRows.value.length / allocationItemsPageSize.value)))
 const allocationItemStartIndex = computed(() => (allocationItemsPage.value - 1) * allocationItemsPageSize.value)
+const allocationTableMaxHeight = computed(() => (isMobileViewport.value ? '52vh' : '56vh'))
 const sortedAllocationRows = computed(() => sortWorkOrderRows(allocationRows.value, allocationSortState))
 const allocationPagedRows = computed(() => (
   sortedAllocationRows.value.slice(allocationItemStartIndex.value, allocationItemStartIndex.value + allocationItemsPageSize.value)
@@ -3620,6 +3623,10 @@ function getAllocationCurrentStock(row, shopId) {
   return Number(getAllocationTarget(row, shopId)?.currentStock || 0)
 }
 
+function formatAllocationOriginalStockQuantity(row) {
+  return `${Number(row?.plannedQuantity || 0)}/${Number(row?.sourceStock || 0)}`
+}
+
 function setAllocationQuantity(row, shopId, nextValue) {
   const target = getAllocationTarget(row, shopId)
   if (!target) {
@@ -3651,7 +3658,7 @@ function buildAllocationWarnings() {
       warnings.push(`${goodsLabel} 分配数量超出原单 ${assignedQuantity - plannedQuantity} 件`)
     }
     if (assignedQuantity > sourceStock) {
-      warnings.push(`${goodsLabel} 分配数量超出当前库存 ${assignedQuantity - sourceStock} 件`)
+      warnings.push(`${goodsLabel} 分配数量超出库存 ${assignedQuantity - sourceStock} 件`)
     }
   }
   return warnings

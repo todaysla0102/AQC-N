@@ -170,6 +170,3 @@ python3 -m compileall -q backend/fastapi/app backend/fastapi/run.py
 ./scripts/local-test-smoke.sh
 ```
 
-## 发布说明
-
-仓库已排除本地密钥、真实环境变量、SQLite 测试库、构建产物、临时迁移脚本、历史上传素材和本地工作日志。部署时请通过服务器侧 `.env` 或密钥管理系统注入真实配置，不要将生产密钥提交到仓库。

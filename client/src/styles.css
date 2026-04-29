@@ -913,13 +913,14 @@ img.theme-sensitive-logo {
   inset: 0;
   z-index: 4999;
   background: transparent;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .header-floating-menu-backdrop {
   position: absolute;
   inset: 0;
   background: transparent;
+  cursor: default;
 }
 
 .header-notification-popper.el-popper {

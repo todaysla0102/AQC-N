@@ -137,14 +137,12 @@
         >
           <div
             class="header-floating-menu-backdrop"
+            @click="closeSettingsMenu"
           ></div>
           <div
             ref="settingsMenuPortalRef"
             class="header-floating-menu-portal"
             :style="settingsMenuStyle"
-            @pointerdown.stop="pinSettingsMenu"
-            @mousedown.stop="pinSettingsMenu"
-            @touchstart.stop="pinSettingsMenu"
             @click.stop
           >
             <div class="header-floating-menu card-surface">
@@ -155,9 +153,6 @@
                   type="button"
                   class="header-panel-toggle-btn"
                   :class="{ active: headerPanelSection === 'settings' }"
-                  @pointerdown.stop.prevent="openSettingsSection"
-                  @mousedown.stop.prevent="openSettingsSection"
-                  @touchstart.stop.prevent="openSettingsSection"
                   @click.stop.prevent="openSettingsSection"
                 >
                   设置
@@ -166,9 +161,6 @@
                   type="button"
                   class="header-panel-toggle-btn"
                   :class="{ active: headerPanelSection === 'notifications' }"
-                  @pointerdown.stop.prevent="openNotificationSection"
-                  @mousedown.stop.prevent="openNotificationSection"
-                  @touchstart.stop.prevent="openNotificationSection"
                   @click.stop.prevent="openNotificationSection"
                 >
                   通知
@@ -712,8 +704,6 @@ const router = useRouter()
 
 const SIDEBAR_DEFAULT_EXPANDED_KEY = 'aqc_n_sidebar_default_expanded'
 const SETTINGS_MENU_OFFSET = 2
-const SETTINGS_OUTSIDE_POINTER_EVENTS = ['pointerdown', 'mousedown', 'touchstart']
-const SETTINGS_OUTSIDE_POINTER_LISTENER_OPTIONS = { capture: true, passive: false }
 
 function resolveStoredSidebarDefaultExpanded() {
   if (typeof window === 'undefined') {
@@ -753,7 +743,6 @@ const settingsMenuPortalRef = ref(null)
 const searchInputRef = ref(null)
 const searchBodyContentRef = ref(null)
 const settingsMenuVisible = ref(false)
-const settingsMenuSticky = ref(false)
 const settingsMenuStyle = ref({})
 const headerPanelSection = ref('settings')
 const searchVisible = ref(false)
@@ -803,11 +792,6 @@ let searchAbortController = null
 let notificationRefreshTimer = null
 let searchFocusRetryTimers = []
 let lastBrowserUnreadCount = 0
-let settingsInternalPointerActive = false
-let settingsInternalPointerResetTimer = null
-let headerPanelSwitchToken = 0
-let headerPanelSwitchTimers = []
-let settingsOutsidePointerListenersActive = false
 
 const SEARCH_LIMIT = 5
 const GLOBAL_SEARCH_Z_INDEX = 96000
@@ -1414,8 +1398,7 @@ function updateSettingsMenuPosition() {
   }
 }
 
-function openSettingsMenu(sticky = false) {
-  settingsMenuSticky.value = sticky
+function openSettingsMenu() {
   settingsMenuVisible.value = true
   nextTick(() => {
     updateSettingsMenuPosition()
@@ -1427,99 +1410,13 @@ function setThemeMode(mode) {
   themeStore.setMode(mode)
 }
 
-function pinSettingsMenu() {
-  markSettingsInternalPointer()
-  settingsMenuSticky.value = true
-  settingsMenuVisible.value = true
-}
-
-function clearSettingsInternalPointerTimer() {
-  if (settingsInternalPointerResetTimer) {
-    window.clearTimeout(settingsInternalPointerResetTimer)
-    settingsInternalPointerResetTimer = null
-  }
-}
-
-function clearHeaderPanelSwitchTimers() {
-  headerPanelSwitchToken += 1
-  headerPanelSwitchTimers.forEach((timerId) => window.clearTimeout(timerId))
-  headerPanelSwitchTimers = []
-}
-
-function markSettingsInternalPointer() {
-  settingsInternalPointerActive = true
-  clearSettingsInternalPointerTimer()
-  if (typeof window === 'undefined') {
-    settingsInternalPointerActive = false
-    return
-  }
-  settingsInternalPointerResetTimer = window.setTimeout(() => {
-    settingsInternalPointerActive = false
-    settingsInternalPointerResetTimer = null
-  }, 800)
-}
-
-function isSettingsEventInsideElement(event, element) {
-  if (!element || !event) {
-    return false
-  }
-  const path = typeof event.composedPath === 'function' ? event.composedPath() : []
-  if (path.includes(element)) {
-    return true
-  }
-  if (event.target && typeof element.contains === 'function' && element.contains(event.target)) {
-    return true
-  }
-  const rect = element.getBoundingClientRect()
-  const clientX = Number(event.clientX)
-  const clientY = Number(event.clientY)
-  if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
-    return false
-  }
-  const tolerance = 2
-  return (
-    clientX >= rect.left - tolerance
-    && clientX <= rect.right + tolerance
-    && clientY >= rect.top - tolerance
-    && clientY <= rect.bottom + tolerance
-  )
-}
-
-function isSettingsEventInsideFloatingControls(event) {
-  return (
-    isSettingsEventInsideElement(event, resolveElementRef(settingsMenuPortalRef.value))
-    || isSettingsEventInsideElement(event, resolveElementRef(settingsAnchorRef.value))
-  )
-}
-
 function switchHeaderPanelSection(section) {
-  pinSettingsMenu()
   const changed = headerPanelSection.value !== section
   headerPanelSection.value = section
   nextTick(() => {
     updateSettingsMenuPosition()
   })
-  scheduleHeaderPanelSwitchRestore(section)
   return changed
-}
-
-function scheduleHeaderPanelSwitchRestore(section) {
-  if (typeof window === 'undefined') {
-    return
-  }
-  clearHeaderPanelSwitchTimers()
-  const token = headerPanelSwitchToken
-  headerPanelSwitchTimers = [0, 80, 260].map((delay) => (
-    window.setTimeout(() => {
-      if (token !== headerPanelSwitchToken || !settingsMenuVisible.value) {
-        return
-      }
-      headerPanelSection.value = section
-      settingsMenuSticky.value = true
-      settingsMenuVisible.value = true
-      updateSettingsMenuPosition()
-    }, delay)
-  ))
 }
 
 function openSettingsSection() {
@@ -1534,52 +1431,7 @@ function openNotificationSection() {
 }
 
 function closeSettingsMenu() {
-  settingsMenuSticky.value = false
   settingsMenuVisible.value = false
-  settingsInternalPointerActive = false
-  clearSettingsInternalPointerTimer()
-  clearHeaderPanelSwitchTimers()
-}
-
-function blockSettingsOutsidePointerEvent(event) {
-  if (typeof event?.stopPropagation === 'function') {
-    event.stopPropagation()
-  }
-  if (event?.cancelable && typeof event.preventDefault === 'function') {
-    event.preventDefault()
-  }
-}
-
-function handleSettingsDocumentPointerdown(event) {
-  if (!settingsMenuVisible.value) {
-    return
-  }
-  if (settingsInternalPointerActive || isSettingsEventInsideFloatingControls(event)) {
-    markSettingsInternalPointer()
-    return
-  }
-  closeSettingsMenu()
-  blockSettingsOutsidePointerEvent(event)
-}
-
-function addSettingsOutsidePointerListeners() {
-  if (settingsOutsidePointerListenersActive || typeof document === 'undefined') {
-    return
-  }
-  SETTINGS_OUTSIDE_POINTER_EVENTS.forEach((eventName) => {
-    document.addEventListener(eventName, handleSettingsDocumentPointerdown, SETTINGS_OUTSIDE_POINTER_LISTENER_OPTIONS)
-  })
-  settingsOutsidePointerListenersActive = true
-}
-
-function removeSettingsOutsidePointerListeners() {
-  if (!settingsOutsidePointerListenersActive || typeof document === 'undefined') {
-    return
-  }
-  SETTINGS_OUTSIDE_POINTER_EVENTS.forEach((eventName) => {
-    document.removeEventListener(eventName, handleSettingsDocumentPointerdown, SETTINGS_OUTSIDE_POINTER_LISTENER_OPTIONS)
-  })
-  settingsOutsidePointerListenersActive = false
 }
 
 function toggleSettingsMenu() {
@@ -1587,9 +1439,8 @@ function toggleSettingsMenu() {
     closeSettingsMenu()
     return
   }
-  clearHeaderPanelSwitchTimers()
   headerPanelSection.value = 'settings'
-  openSettingsMenu(true)
+  openSettingsMenu()
 }
 
 function normalizeSearchText(value) {
@@ -2081,7 +1932,14 @@ function formatNotificationTime(value) {
   if (!value) {
     return ''
   }
-  return formatShanghaiDate(value)
+  const text = String(value || '').trim()
+  const normalized = text.includes('T') ? text : text.replace(' ', 'T')
+  const hasExplicitTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized)
+  const parsed = new Date(hasExplicitTimezone ? normalized : `${normalized}+08:00`)
+  if (Number.isNaN(parsed.getTime())) {
+    return text
+  }
+  return formatShanghaiDate(parsed)
 }
 
 function buildNotificationDetail(item) {
@@ -2252,11 +2110,9 @@ watch(
 
 watch(settingsMenuVisible, (value) => {
   if (!value) {
-    removeSettingsOutsidePointerListeners()
     headerPanelSection.value = 'settings'
     return
   }
-  addSettingsOutsidePointerListeners()
   nextTick(() => {
     updateSettingsMenuPosition()
   })
@@ -2364,13 +2220,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', detectMobile)
   window.removeEventListener('aqc:open-global-search', handleOpenGlobalSearchEvent)
   document.removeEventListener('keydown', handleGlobalKeydown)
-  removeSettingsOutsidePointerListeners()
   clearSidebarIntroTimer()
   clearSidebarTextTimer()
   clearChartResizeTimers()
   clearSearchFocusTimers()
-  clearSettingsInternalPointerTimer()
-  clearHeaderPanelSwitchTimers()
   if (searchDebounceTimer) {
     window.clearTimeout(searchDebounceTimer)
     searchDebounceTimer = null

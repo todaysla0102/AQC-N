@@ -1,7 +1,7 @@
 {
   "name": "aqc-n-client",
   "private": true,
-  "version": "1.10.35",
+  "version": "1.10.36",
   "type": "module",
   "scripts": {
     "dev": "vite",

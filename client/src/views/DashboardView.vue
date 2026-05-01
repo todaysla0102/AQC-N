@@ -652,6 +652,9 @@ function saveSalesSettings() {
   ElMessage.success('销售额设置已保存')
 }
 
+loadSalesPreferences()
+copySalesPreferencesToDraft()
+
 function goToScope(scope) {
   router.push({ name: 'work-orders', query: { scope } })
 }
@@ -773,8 +776,6 @@ async function loadWorkOrderDashboard() {
 }
 
 onMounted(() => {
-  loadSalesPreferences()
-  copySalesPreferencesToDraft()
   scheduleDateRange.value = resolveRangeFromPreset(schedulePeriodPreset.value)
   scheduleDraftRange.value = [...scheduleDateRange.value]
   void Promise.all([loadSalesStoreOptions(), loadWorkOrderDashboard(), loadScheduleSummary()])

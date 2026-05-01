@@ -6,6 +6,7 @@ import 'element-plus/dist/index.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 
 import App from './App.vue'
+import NativeSystemSelect from './components/NativeSystemSelect.vue'
 import router from './router'
 import './styles.css'
 import { useAppVersionStore } from './stores/appVersion'
@@ -20,6 +21,7 @@ app.use(ElementPlus, {
   locale: zhCn,
   zIndex: 8200,
 })
+app.component('ElSelect', NativeSystemSelect)
 
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)

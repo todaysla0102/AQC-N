@@ -3,6 +3,7 @@
     <div class="dashboard-home-grid">
       <div class="dashboard-home-main">
         <SalesSummaryPanel
+          :key="salesPanelKey"
           v-if="authStore.can('sales.read')"
           panel-tag="主页"
           :display-title="salesSummaryTitle"
@@ -12,9 +13,35 @@
           :show-kpi="true"
           :show-stats="false"
           :minimal="true"
-          default-period="month"
+          :default-period="salesPreferences.defaultPeriod"
+          :comparison-mode="salesPreferences.compareMode"
+          :compact-compare-amounts="true"
+          :compact-axis-labels="true"
+          :kpi-interactive="true"
           :auto-refresh-ms="15000"
-        />
+          @loaded="onSalesSummaryLoaded"
+          @kpi-click="openSalesSettings"
+        >
+          <template #panel-tag>
+            <p class="panel-tag dashboard-sales-scope-label">{{ salesScopeDisplayLabel }}</p>
+          </template>
+
+          <template #title="{ title }">
+            <label class="dashboard-sales-title-select" aria-label="切换销售范围">
+              <span class="sales-summary-title-trigger">{{ title }}</span>
+              <select :value="activeSalesScopeValue" @change="onSalesScopeChange">
+                <option v-if="canSelectTotalSalesScope" value="all">总销售额</option>
+                <option
+                  v-for="option in salesStoreOptions"
+                  :key="option.id"
+                  :value="String(option.id)"
+                >
+                  {{ option.name }}
+                </option>
+              </select>
+            </label>
+          </template>
+        </SalesSummaryPanel>
 
         <article v-else class="card-surface profile-card motion-fade-slide">
           <header class="section-head">
@@ -146,6 +173,95 @@
         </div>
       </template>
     </el-dialog>
+
+    <ResponsiveDialog
+      v-model="salesSettingsVisible"
+      title="销售额设置"
+      width="min(720px, 94vw)"
+      class="aqc-app-dialog dashboard-sales-settings-dialog"
+      mobile-subtitle="首页图表"
+      :initial-snap="0.66"
+      :expanded-snap="0.94"
+      :before-close="handleSalesSettingsBeforeClose"
+    >
+      <div class="dashboard-sales-settings-shell">
+        <section class="header-floating-menu-section">
+          <span class="header-floating-menu-label">销售额类目</span>
+          <div class="header-panel-toggle dashboard-settings-toggle" role="tablist" aria-label="销售额类目">
+            <button
+              v-for="option in salesKindOptions"
+              :key="option.value"
+              type="button"
+              class="header-panel-toggle-btn"
+              :class="{ active: salesSettingsDraft.saleKind === option.value }"
+              @click="salesSettingsDraft.saleKind = option.value"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+        </section>
+
+        <section class="header-floating-menu-section">
+          <span class="header-floating-menu-label">默认显示时间范围</span>
+          <div class="header-theme-options dashboard-settings-options">
+            <button
+              v-for="option in salesPeriodOptions"
+              :key="option.value"
+              type="button"
+              class="header-theme-option dashboard-settings-option"
+              :class="{ active: salesSettingsDraft.defaultPeriod === option.value }"
+              @click="salesSettingsDraft.defaultPeriod = option.value"
+            >
+              <span>{{ option.label }}</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="header-floating-menu-section">
+          <span class="header-floating-menu-label">默认数据对比</span>
+          <div class="header-theme-options dashboard-settings-options">
+            <button
+              v-for="option in salesCompareOptions"
+              :key="option.value"
+              type="button"
+              class="header-theme-option dashboard-settings-option"
+              :class="{ active: salesSettingsDraft.compareMode === option.value }"
+              @click="salesSettingsDraft.compareMode = option.value"
+            >
+              <span>{{ option.label }}</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="header-floating-menu-section">
+          <span class="header-floating-menu-label">默认显示点位</span>
+          <div class="header-setting-switch-row dashboard-settings-select-row">
+            <span>{{ defaultSalesScopeHint }}</span>
+            <el-select
+              v-model="salesSettingsDraft.defaultScope"
+              filterable
+              class="dashboard-settings-select"
+              placeholder="选择默认点位"
+            >
+              <el-option v-if="canSelectTotalSalesScope" label="总销售额" value="all" />
+              <el-option
+                v-for="option in salesStoreOptions"
+                :key="option.id"
+                :label="option.name"
+                :value="String(option.id)"
+              />
+            </el-select>
+          </div>
+        </section>
+      </div>
+
+      <template #footer>
+        <div class="form-actions">
+          <el-button @click="requestCloseSalesSettings">返回</el-button>
+          <el-button type="primary" @click="saveSalesSettings">保存</el-button>
+        </div>
+      </template>
+    </ResponsiveDialog>
   </section>
 </template>
 
@@ -154,13 +270,33 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 
+import ResponsiveDialog from '../components/ResponsiveDialog.vue'
 import SalesSummaryPanel from '../components/SalesSummaryPanel.vue'
 import { apiGet } from '../services/api'
 import { useAuthStore } from '../stores/auth'
+import { confirmAction } from '../utils/confirm'
+import { simplifyShopName, SHOP_TYPE_STORE } from '../utils/shops'
 
 const authStore = useAuthStore()
 const router = useRouter()
 const isEngineerRole = computed(() => authStore.aqcRoleKey === 'aqc_engineer')
+const SALES_DASHBOARD_SETTINGS_KEY = 'aqc_n_dashboard_sales_settings_v1'
+
+const salesPeriodOptions = [
+  { value: 'day', label: '本日' },
+  { value: 'week', label: '本周' },
+  { value: 'month', label: '本月' },
+  { value: 'ytd', label: '年累计' },
+]
+const salesKindOptions = [
+  { value: 'goods', label: '门店销售额' },
+  { value: 'repair', label: '维修中心销售额' },
+]
+const salesCompareOptions = [
+  { value: 'period_total', label: '环比总额' },
+  { value: 'period_elapsed', label: '环比同期' },
+  { value: 'year_over_year', label: '同比' },
+]
 
 const dashboard = reactive({
   draftCount: 0,
@@ -188,9 +324,57 @@ const scheduleSummary = reactive({
 
 const showScheduleCard = computed(() => authStore.can('shops.read'))
 const showSideColumn = computed(() => showScheduleCard.value || authStore.can('workorders.read'))
-const salesSummaryTitle = computed(() => (isEngineerRole.value ? '维修销售额' : '销售额'))
-const salesSummaryQuery = computed(() => (isEngineerRole.value ? { sale_kind: 'repair' } : {}))
+const salesPanelKey = ref(0)
+const salesSettingsVisible = ref(false)
+const salesActivePeriod = ref('month')
+const salesStoreOptions = ref([])
+const activeSalesScope = ref('all')
+const salesPreferences = reactive({
+  saleKind: 'goods',
+  defaultPeriod: 'month',
+  compareMode: 'period_total',
+  defaultScope: 'all',
+})
+const salesSettingsDraft = reactive({
+  saleKind: 'goods',
+  defaultPeriod: 'month',
+  compareMode: 'period_total',
+  defaultScope: 'all',
+})
+const canSelectTotalSalesScope = computed(() => authStore.isAdmin)
+const activeSalesScopeValue = computed(() => normalizeSalesScopeValue(activeSalesScope.value))
+const salesActivePeriodLabel = computed(() => salesPeriodOptions.find((item) => item.value === salesActivePeriod.value)?.label || '本月')
+const salesSummaryTitle = computed(() => '销售额')
+const salesScopeShortLabel = computed(() => {
+  const value = activeSalesScopeValue.value
+  if (value === 'all') {
+    return '总'
+  }
+  const option = salesStoreOptions.value.find((item) => String(item.id) === value)
+  return simplifyShopName(option?.name || authStore.user?.shopName || '') || '当前店铺'
+})
+const salesScopeDisplayLabel = computed(() => `${salesScopeShortLabel.value} · ${salesActivePeriodLabel.value}`)
+const salesSummaryQuery = computed(() => {
+  const query = {
+    sale_kind: salesPreferences.saleKind,
+    compare_mode: salesPreferences.compareMode,
+  }
+  const scopeValue = activeSalesScopeValue.value
+  if (scopeValue !== 'all') {
+    query.shop_id = scopeValue
+  }
+  return query
+})
+const defaultSalesScopeHint = computed(() => (
+  salesSettingsDraft.defaultScope === 'all'
+    ? '总销售额'
+    : salesStoreOptions.value.find((item) => String(item.id) === String(salesSettingsDraft.defaultScope))?.name || '当前店铺'
+))
 const salesEntryButtonLabel = computed(() => (isEngineerRole.value ? '录入维修销售' : '扫码录入销售'))
+const salesSettingsDirty = computed(() => (
+  JSON.stringify(normalizeSalesPreferences(salesSettingsDraft))
+  !== JSON.stringify(normalizeSalesPreferences(salesPreferences))
+))
 
 const tomorrowDateLabel = computed(() => {
   const tomorrow = new Date()
@@ -285,6 +469,187 @@ function resolveRangeFromPreset(preset) {
     formatDateValue(new Date(today.getFullYear(), today.getMonth(), 1)),
     formatDateValue(new Date(today.getFullYear(), today.getMonth() + 1, 0)),
   ]
+}
+
+function getSalesSettingsStorageKey() {
+  return `${SALES_DASHBOARD_SETTINGS_KEY}:${authStore.user?.id || 'anonymous'}`
+}
+
+function defaultSalesScopeValue() {
+  if (authStore.isAdmin) {
+    return 'all'
+  }
+  const userShopIds = Array.isArray(authStore.user?.shopIds) ? authStore.user.shopIds : []
+  const primaryShopId = Number(userShopIds[0] || authStore.shopId || 0)
+  return primaryShopId > 0 ? String(primaryShopId) : 'all'
+}
+
+function normalizeSalesScopeValue(value) {
+  const raw = String(value || '').trim()
+  if (canSelectTotalSalesScope.value && raw === 'all') {
+    return 'all'
+  }
+  const numericValue = Number(raw)
+  if (numericValue > 0) {
+    return String(numericValue)
+  }
+  const fallback = defaultSalesScopeValue()
+  return canSelectTotalSalesScope.value || fallback !== 'all' ? fallback : 'all'
+}
+
+function normalizeSalesPreferences(value = {}) {
+  const saleKind = salesKindOptions.some((item) => item.value === value.saleKind) ? value.saleKind : (isEngineerRole.value ? 'repair' : 'goods')
+  const defaultPeriod = salesPeriodOptions.some((item) => item.value === value.defaultPeriod) ? value.defaultPeriod : 'month'
+  const compareMode = salesCompareOptions.some((item) => item.value === value.compareMode) ? value.compareMode : 'period_total'
+  return {
+    saleKind,
+    defaultPeriod,
+    compareMode,
+    defaultScope: normalizeSalesScopeValue(value.defaultScope),
+  }
+}
+
+function applySalesPreferences(value = {}) {
+  const normalized = normalizeSalesPreferences(value)
+  salesPreferences.saleKind = normalized.saleKind
+  salesPreferences.defaultPeriod = normalized.defaultPeriod
+  salesPreferences.compareMode = normalized.compareMode
+  salesPreferences.defaultScope = normalized.defaultScope
+  salesActivePeriod.value = normalized.defaultPeriod
+  activeSalesScope.value = normalized.defaultScope
+}
+
+function copySalesPreferencesToDraft() {
+  salesSettingsDraft.saleKind = salesPreferences.saleKind
+  salesSettingsDraft.defaultPeriod = salesPreferences.defaultPeriod
+  salesSettingsDraft.compareMode = salesPreferences.compareMode
+  salesSettingsDraft.defaultScope = normalizeSalesScopeValue(salesPreferences.defaultScope)
+}
+
+function loadSalesPreferences() {
+  const fallback = normalizeSalesPreferences({
+    saleKind: isEngineerRole.value ? 'repair' : 'goods',
+    defaultPeriod: 'month',
+    compareMode: 'period_total',
+    defaultScope: defaultSalesScopeValue(),
+  })
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+    applySalesPreferences(fallback)
+    return
+  }
+  try {
+    const raw = window.localStorage.getItem(getSalesSettingsStorageKey())
+    const parsed = raw ? JSON.parse(raw) : {}
+    applySalesPreferences({ ...fallback, ...(parsed && typeof parsed === 'object' ? parsed : {}) })
+  } catch (error) {
+    console.warn('Failed to read dashboard sales settings', error)
+    applySalesPreferences(fallback)
+  }
+}
+
+function persistSalesPreferences() {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+    return
+  }
+  try {
+    window.localStorage.setItem(getSalesSettingsStorageKey(), JSON.stringify(normalizeSalesPreferences(salesPreferences)))
+  } catch (error) {
+    console.warn('Failed to persist dashboard sales settings', error)
+  }
+}
+
+function ensureSalesScopeStillAvailable() {
+  const storeIds = new Set(salesStoreOptions.value.map((item) => String(item.id)))
+  const fallback = defaultSalesScopeValue()
+  for (const target of [salesPreferences, salesSettingsDraft]) {
+    if (target.defaultScope === 'all' && canSelectTotalSalesScope.value) {
+      continue
+    }
+    if (!storeIds.has(String(target.defaultScope))) {
+      target.defaultScope = storeIds.has(fallback) ? fallback : (canSelectTotalSalesScope.value ? 'all' : String(salesStoreOptions.value[0]?.id || fallback))
+    }
+  }
+  if (activeSalesScope.value === 'all' && canSelectTotalSalesScope.value) {
+    return
+  }
+  if (!storeIds.has(String(activeSalesScope.value))) {
+    activeSalesScope.value = storeIds.has(String(salesPreferences.defaultScope)) ? String(salesPreferences.defaultScope) : String(salesStoreOptions.value[0]?.id || fallback)
+  }
+}
+
+async function loadSalesStoreOptions() {
+  if (!authStore.can('shops.read')) {
+    return
+  }
+  const payload = await apiGet('/shops/options', {
+    token: authStore.token,
+    query: { limit: 300 },
+  })
+  if (!payload?.success) {
+    return
+  }
+  salesStoreOptions.value = (payload.options || [])
+    .filter((item) => Number(item.shopType ?? SHOP_TYPE_STORE) === SHOP_TYPE_STORE)
+    .map((item) => ({
+      id: Number(item.id),
+      name: String(item.name || ''),
+    }))
+    .filter((item) => item.id > 0 && item.name)
+  ensureSalesScopeStillAvailable()
+}
+
+function onSalesScopeChange(event) {
+  activeSalesScope.value = normalizeSalesScopeValue(event?.target?.value)
+}
+
+function onSalesSummaryLoaded(payload) {
+  salesActivePeriod.value = String(payload?.period || salesPreferences.defaultPeriod || 'month')
+}
+
+function openSalesSettings() {
+  copySalesPreferencesToDraft()
+  salesSettingsVisible.value = true
+}
+
+async function confirmDiscardSalesSettings() {
+  if (!salesSettingsDirty.value) {
+    return true
+  }
+  try {
+    await confirmAction('确认退出更改吗？内容将不会保存。', '退出确认', '退出')
+    copySalesPreferencesToDraft()
+    return true
+  } catch (error) {
+    return false
+  }
+}
+
+function handleSalesSettingsBeforeClose(done) {
+  confirmDiscardSalesSettings().then((ok) => {
+    if (ok) {
+      done()
+    }
+  })
+}
+
+async function requestCloseSalesSettings() {
+  if (await confirmDiscardSalesSettings()) {
+    salesSettingsVisible.value = false
+  }
+}
+
+function saveSalesSettings() {
+  const normalized = normalizeSalesPreferences(salesSettingsDraft)
+  salesPreferences.saleKind = normalized.saleKind
+  salesPreferences.defaultPeriod = normalized.defaultPeriod
+  salesPreferences.compareMode = normalized.compareMode
+  salesPreferences.defaultScope = normalized.defaultScope
+  activeSalesScope.value = normalized.defaultScope
+  salesActivePeriod.value = normalized.defaultPeriod
+  persistSalesPreferences()
+  salesPanelKey.value += 1
+  salesSettingsVisible.value = false
+  ElMessage.success('销售额设置已保存')
 }
 
 function goToScope(scope) {
@@ -408,8 +773,10 @@ async function loadWorkOrderDashboard() {
 }
 
 onMounted(() => {
+  loadSalesPreferences()
+  copySalesPreferencesToDraft()
   scheduleDateRange.value = resolveRangeFromPreset(schedulePeriodPreset.value)
   scheduleDraftRange.value = [...scheduleDateRange.value]
-  void Promise.all([loadWorkOrderDashboard(), loadScheduleSummary()])
+  void Promise.all([loadSalesStoreOptions(), loadWorkOrderDashboard(), loadScheduleSummary()])
 })
 </script>

@@ -781,6 +781,41 @@ def _previous_period_window(period: str, now: datetime) -> tuple[datetime, datet
     return previous_start, datetime(now.year, 1, 1) - timedelta(microseconds=1)
 
 
+def _shift_year_clamped(value: datetime, year_delta: int) -> datetime:
+    target_year = value.year + year_delta
+    try:
+        return value.replace(year=target_year)
+    except ValueError:
+        # February 29th lands on February 28th when the target year is not leap.
+        return value.replace(year=target_year, day=28)
+
+
+def _previous_elapsed_period_window(period: str, now: datetime) -> tuple[datetime, datetime]:
+    current_start, _current_end = _period_window(period, now)
+    elapsed = max(now - current_start, timedelta())
+    previous_start, previous_total_end = _previous_period_window(period, now)
+    previous_end = previous_start + elapsed
+    return previous_start, min(previous_end, previous_total_end)
+
+
+def _year_over_year_period_window(period: str, now: datetime) -> tuple[datetime, datetime]:
+    current_start, _current_end = _period_window(period, now)
+    previous_start = _shift_year_clamped(current_start, -1)
+    previous_end = _shift_year_clamped(now, -1)
+    if previous_end < previous_start:
+        previous_end = previous_start
+    return previous_start, previous_end
+
+
+def _comparison_period_window(period: str, now: datetime, compare_mode: str | None) -> tuple[datetime, datetime]:
+    normalized_mode = str(compare_mode or "period_total").strip().lower()
+    if normalized_mode in {"period_elapsed", "elapsed", "same_period"}:
+        return _previous_elapsed_period_window(period, now)
+    if normalized_mode in {"year_over_year", "yoy", "同比"}:
+        return _year_over_year_period_window(period, now)
+    return _previous_period_window(period, now)
+
+
 def _bucket_key(dt: datetime, bucket: str) -> str:
     if bucket == "hour":
         return dt.strftime("%Y-%m-%d %H:00")
@@ -869,11 +904,11 @@ def _calc_average_ticket(amount: float, quantity: int) -> float:
     return round(amount / quantity, 2)
 
 
-def _build_metrics(db: Session, now: datetime, conditions: list | None = None) -> list[SalesMetricOut]:
+def _build_metrics(db: Session, now: datetime, conditions: list | None = None, compare_mode: str | None = None) -> list[SalesMetricOut]:
     metrics: list[SalesMetricOut] = []
     for key in ("day", "week", "month", "ytd"):
         start, end = _period_window(key, now)
-        previous_start, previous_end = _previous_period_window(key, now)
+        previous_start, previous_end = _comparison_period_window(key, now, compare_mode)
         current_sales = _sum_amount(db, start, end, conditions)
         previous_sales = _sum_amount(db, previous_start, previous_end, conditions)
         metrics.append(
@@ -1785,6 +1820,7 @@ def delete_sale_record(
 def sales_summary(
     period: str = Query(default="day"),
     sale_kind: str = Query(default=SALE_KIND_GOODS),
+    compare_mode: str = Query(default="period_total"),
     record_id: int | None = Query(default=None, ge=1),
     q: str | None = None,
     order_num: str | None = None,
@@ -1832,7 +1868,7 @@ def sales_summary(
         metric_label = meta["label"]
         title = meta["title"]
         bucket = meta["bucket"]
-        previous_start, previous_end = _previous_period_window(period_key, now)
+        previous_start, previous_end = _comparison_period_window(period_key, now, compare_mode)
 
     rows = (
         db.execute(
@@ -1883,7 +1919,7 @@ def sales_summary(
             ),
         ]
         if period_key == "range"
-        else _build_metrics(db, now, conditions)
+        else _build_metrics(db, now, conditions, compare_mode)
     )
     y_ticks = _build_y_ticks(max((point.y for point in points), default=0.0))
     totals = _summary_totals(rows)

@@ -2,18 +2,41 @@
   <article class="card-surface chart-panel sales-summary-panel motion-fade-slide" :class="{ minimal: minimal }">
     <header class="panel-head" :class="{ compact: minimal }">
       <div>
-        <p v-if="showPanelTag && resolvedPanelTag" class="panel-tag">{{ resolvedPanelTag }}</p>
-        <h2>{{ displayTitle || titleFallback }}</h2>
+        <slot name="panel-tag" :label="resolvedPanelTag">
+          <p v-if="showPanelTag && resolvedPanelTag" class="panel-tag">{{ resolvedPanelTag }}</p>
+        </slot>
+        <slot name="title" :title="displayTitle || titleFallback">
+          <button
+            v-if="titleInteractive"
+            type="button"
+            class="sales-summary-title-trigger"
+            @click="emit('title-click')"
+          >
+            {{ displayTitle || titleFallback }}
+          </button>
+          <h2 v-else>{{ displayTitle || titleFallback }}</h2>
+        </slot>
       </div>
       <div
         v-if="showKpi || (allowToggleChart && toggleButtonPosition === 'header') || hasHeaderActionsSlot"
         class="sales-summary-head-actions"
       >
         <slot name="header-actions" />
-        <div class="sales-kpi">
+        <button
+          v-if="showKpi && kpiInteractive"
+          type="button"
+          class="sales-kpi sales-kpi-trigger"
+          @click="emit('kpi-click')"
+        >
+          <strong>¥ {{ formatMoney(summary.sales) }}</strong>
+          <span :class="{ up: summary.uplift >= 0, down: summary.uplift < 0 }">
+            {{ compareLabel }} {{ formatCompareDelta(summary.uplift || 0) }}
+          </span>
+        </button>
+        <div v-else-if="showKpi" class="sales-kpi">
           <strong v-if="showKpi">¥ {{ formatMoney(summary.sales) }}</strong>
           <span v-if="showKpi" :class="{ up: summary.uplift >= 0, down: summary.uplift < 0 }">
-            {{ compareLabel }} {{ summary.uplift >= 0 ? '+' : '-' }}¥ {{ formatMoney(Math.abs(summary.uplift || 0)) }}
+            {{ compareLabel }} {{ formatCompareDelta(summary.uplift || 0) }}
           </span>
         </div>
         <el-button
@@ -74,7 +97,7 @@
         <span>{{ metric.label }}</span>
         <strong>¥ {{ formatMoney(metric.sales) }}</strong>
         <em :class="{ up: metric.uplift >= 0, down: metric.uplift < 0 }">
-          {{ metricCompareLabel(metric.key) }} {{ metric.uplift >= 0 ? '+' : '-' }}¥ {{ formatMoney(Math.abs(metric.uplift || 0)) }}
+          {{ metricCompareLabel(metric.key) }} {{ formatCompareDelta(metric.uplift || 0) }}
         </em>
       </button>
     </div>
@@ -153,8 +176,28 @@ const props = defineProps({
     type: Number,
     default: 0,
   },
+  titleInteractive: {
+    type: Boolean,
+    default: false,
+  },
+  kpiInteractive: {
+    type: Boolean,
+    default: false,
+  },
+  comparisonMode: {
+    type: String,
+    default: 'period_total',
+  },
+  compactCompareAmounts: {
+    type: Boolean,
+    default: false,
+  },
+  compactAxisLabels: {
+    type: Boolean,
+    default: false,
+  },
 })
-const emit = defineEmits(['loaded'])
+const emit = defineEmits(['loaded', 'title-click', 'kpi-click'])
 
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
@@ -255,10 +298,53 @@ function formatTooltipAmount(value) {
 }
 
 function formatAxisMoney(value) {
+  if (props.compactAxisLabels) {
+    return formatCompactMoney(value, { prefix: '¥' })
+  }
   return `¥${new Intl.NumberFormat('zh-CN', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(value || 0)}`
+}
+
+function truncateDecimal(value, digits = 2) {
+  const factor = 10 ** digits
+  return Math.floor(Number(value || 0) * factor) / factor
+}
+
+function trimFixed(value, digits = 2) {
+  return truncateDecimal(value, digits)
+    .toFixed(digits)
+    .replace(/\.?0+$/, '')
+}
+
+function formatCompactMoney(value, options = {}) {
+  const amount = Number(value || 0)
+  const prefix = String(options.prefix || '')
+  if (amount === 0) {
+    return `${prefix}0`
+  }
+  const sign = amount < 0 ? '-' : ''
+  const absolute = Math.abs(amount)
+  if (absolute >= 10000) {
+    return `${sign}${prefix}${trimFixed(absolute / 10000)}w`
+  }
+  if (absolute >= 1000) {
+    return `${sign}${prefix}${trimFixed(absolute / 1000)}k`
+  }
+  return `${sign}${prefix}${new Intl.NumberFormat('zh-CN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(absolute)}`
+}
+
+function formatCompareDelta(value) {
+  const amount = Number(value || 0)
+  const sign = amount >= 0 ? '+' : '-'
+  if (props.compactCompareAmounts) {
+    return `${sign}${formatCompactMoney(Math.abs(amount), { prefix: '¥' })}`
+  }
+  return `${sign}¥ ${formatMoney(Math.abs(amount))}`
 }
 
 function formatPointLabel(value, period) {
@@ -276,6 +362,21 @@ function formatPointLabel(value, period) {
 }
 
 function metricCompareLabel(period) {
+  if (props.comparisonMode === 'year_over_year') {
+    return '同比'
+  }
+  if (props.comparisonMode === 'period_elapsed') {
+    if (period === 'day') {
+      return '较昨日同期'
+    }
+    if (period === 'week') {
+      return '较上周同期'
+    }
+    if (period === 'month') {
+      return '较上月同期'
+    }
+    return '较去年同期'
+  }
   if (period === 'day') {
     return '较昨日'
   }

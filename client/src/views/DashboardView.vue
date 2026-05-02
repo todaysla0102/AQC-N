@@ -2,46 +2,88 @@
   <section class="dashboard-page work-order-dashboard-page">
     <div class="dashboard-home-grid">
       <div class="dashboard-home-main">
-        <SalesSummaryPanel
-          :key="salesPanelKey"
-          v-if="authStore.can('sales.read')"
-          panel-tag="主页"
-          :display-title="salesSummaryTitle"
-          :title-fallback="salesSummaryTitle"
-          :query="salesSummaryQuery"
-          :show-panel-tag="true"
-          :show-kpi="true"
-          :show-stats="false"
-          :minimal="true"
-          :default-period="salesPreferences.defaultPeriod"
-          :comparison-mode="salesPreferences.compareMode"
-          :compact-compare-amounts="true"
-          :compact-axis-labels="true"
-          :kpi-interactive="true"
-          :auto-refresh-ms="15000"
-          @loaded="onSalesSummaryLoaded"
-          @kpi-click="openSalesSettings"
-        >
-          <template #panel-tag>
-            <p class="panel-tag dashboard-sales-scope-label">{{ salesScopeDisplayLabel }}</p>
-          </template>
-
-          <template #title="{ title }">
-            <label class="dashboard-sales-title-select" aria-label="切换销售范围">
-              <span class="sales-summary-title-trigger">{{ title }}</span>
-              <select :value="activeSalesScopeValue" @change="onSalesScopeChange">
-                <option v-if="canSelectTotalSalesScope" value="all">总销售额</option>
-                <option
-                  v-for="option in salesStoreOptions"
-                  :key="option.id"
-                  :value="String(option.id)"
+        <template v-if="authStore.can('sales.read')">
+          <div
+            class="dashboard-card-viewport"
+            @touchstart.passive="onDashboardTouchStart"
+            @touchmove="onDashboardTouchMove"
+            @touchend="onDashboardTouchEnd"
+            @touchcancel="resetDashboardSwipe"
+          >
+            <div
+              class="dashboard-card-track"
+              :class="{
+                'show-calendar': dashboardMainCard === 'calendar',
+                'is-dragging': dashboardSwipeActive,
+              }"
+              :style="dashboardCardTrackStyle"
+            >
+              <div
+                class="dashboard-card-slide"
+                :class="{ active: dashboardMainCard === 'sales' }"
+                :aria-hidden="dashboardMainCard !== 'sales'"
+              >
+                <SalesSummaryPanel
+                  :key="`sales-${salesPanelKey}`"
+                  panel-tag="主页"
+                  :display-title="salesSummaryTitle"
+                  :title-fallback="salesSummaryTitle"
+                  :query="salesSummaryQuery"
+                  :show-panel-tag="true"
+                  :show-kpi="true"
+                  :show-stats="false"
+                  :minimal="true"
+                  :default-period="salesPreferences.defaultPeriod"
+                  :comparison-mode="salesPreferences.compareMode"
+                  :compact-compare-amounts="true"
+                  :compact-axis-labels="true"
+                  :title-interactive="true"
+                  :kpi-interactive="true"
+                  :auto-refresh-ms="15000"
+                  @loaded="onSalesSummaryLoaded"
+                  @title-click="switchDashboardMainCard('calendar')"
+                  @kpi-click="openSalesSettings"
                 >
-                  {{ option.name }}
-                </option>
-              </select>
-            </label>
-          </template>
-        </SalesSummaryPanel>
+                  <template #panel-tag>
+                    <label class="dashboard-sales-title-select" aria-label="切换销售范围">
+                      <span class="panel-tag dashboard-sales-scope-label">{{ salesScopeDisplayLabel }}</span>
+                      <select :value="activeSalesScopeValue" @change="onSalesScopeChange">
+                        <option v-if="canSelectTotalSalesScope" value="all">总销售额</option>
+                        <option
+                          v-for="option in salesStoreOptions"
+                          :key="option.id"
+                          :value="String(option.id)"
+                        >
+                          {{ option.name }}
+                        </option>
+                      </select>
+                    </label>
+                  </template>
+                </SalesSummaryPanel>
+              </div>
+
+              <div
+                class="dashboard-card-slide"
+                :class="{ active: dashboardMainCard === 'calendar' }"
+                :aria-hidden="dashboardMainCard !== 'calendar'"
+              >
+                <SalesCalendarCard
+                  class="dashboard-home-calendar-card"
+                  title="日历"
+                  title-interactive
+                  :query="dashboardCalendarQuery"
+                  :scope-value="activeSalesScopeValue === 'all' ? '' : activeSalesScopeValue"
+                  :scope-label="salesScopeShortLabel"
+                  :scope-options="dashboardCalendarScopeOptions"
+                  :can-select-total-scope="canSelectTotalSalesScope"
+                  motion-delay="0s"
+                  @title-click="switchDashboardMainCard('sales')"
+                  @scope-change="onDashboardCalendarScopeChange"
+                />
+              </div>
+            </div>
+          </div>
+        </template>
 
         <article v-else class="card-surface profile-card motion-fade-slide">
           <header class="section-head">
@@ -271,6 +313,7 @@ import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 
 import ResponsiveDialog from '../components/ResponsiveDialog.vue'
+import SalesCalendarCard from '../components/SalesCalendarCard.vue'
 import SalesSummaryPanel from '../components/SalesSummaryPanel.vue'
 import { apiGet } from '../services/api'
 import { useAuthStore } from '../stores/auth'
@@ -325,6 +368,13 @@ const scheduleSummary = reactive({
 const showScheduleCard = computed(() => authStore.can('shops.read'))
 const showSideColumn = computed(() => showScheduleCard.value || authStore.can('workorders.read'))
 const salesPanelKey = ref(0)
+const dashboardMainCard = ref('sales')
+const dashboardSwipeActive = ref(false)
+const dashboardSwipeStart = reactive({
+  x: 0,
+  y: 0,
+})
+const dashboardSwipeDeltaX = ref(0)
 const salesSettingsVisible = ref(false)
 const salesActivePeriod = ref('month')
 const salesStoreOptions = ref([])
@@ -365,6 +415,23 @@ const salesSummaryQuery = computed(() => {
   }
   return query
 })
+const dashboardCalendarQuery = computed(() => {
+  const query = {
+    sale_kind: salesPreferences.saleKind,
+  }
+  const scopeValue = activeSalesScopeValue.value
+  if (scopeValue !== 'all') {
+    query.shop_id = scopeValue
+  }
+  return query
+})
+const dashboardCalendarScopeOptions = computed(() => salesStoreOptions.value.map((item) => ({
+  label: item.name,
+  value: String(item.id),
+})))
+const dashboardCardTrackStyle = computed(() => ({
+  '--dashboard-swipe-offset': `${dashboardSwipeDeltaX.value}px`,
+}))
 const defaultSalesScopeHint = computed(() => (
   salesSettingsDraft.defaultScope === 'all'
     ? '总销售额'
@@ -600,6 +667,75 @@ async function loadSalesStoreOptions() {
 
 function onSalesScopeChange(event) {
   activeSalesScope.value = normalizeSalesScopeValue(event?.target?.value)
+}
+
+function onDashboardCalendarScopeChange(value) {
+  activeSalesScope.value = normalizeSalesScopeValue(value || 'all')
+}
+
+function switchDashboardMainCard(target) {
+  const nextTarget = target === 'calendar' ? 'calendar' : 'sales'
+  if (dashboardMainCard.value === nextTarget) {
+    return
+  }
+  resetDashboardSwipe()
+  dashboardMainCard.value = nextTarget
+}
+
+function resetDashboardSwipe() {
+  dashboardSwipeActive.value = false
+  dashboardSwipeDeltaX.value = 0
+  dashboardSwipeStart.x = 0
+  dashboardSwipeStart.y = 0
+}
+
+function onDashboardTouchStart(event) {
+  const touch = event.touches?.[0]
+  if (!touch) {
+    return
+  }
+  dashboardSwipeActive.value = true
+  dashboardSwipeDeltaX.value = 0
+  dashboardSwipeStart.x = touch.clientX
+  dashboardSwipeStart.y = touch.clientY
+}
+
+function onDashboardTouchMove(event) {
+  if (!dashboardSwipeActive.value) {
+    return
+  }
+  const touch = event.touches?.[0]
+  if (!touch) {
+    return
+  }
+  const deltaX = touch.clientX - dashboardSwipeStart.x
+  const deltaY = touch.clientY - dashboardSwipeStart.y
+  if (Math.abs(deltaX) < 10 || Math.abs(deltaX) < Math.abs(deltaY) * 1.18) {
+    return
+  }
+  event.preventDefault?.()
+  const canSwipeToCalendar = dashboardMainCard.value === 'sales' && deltaX < 0
+  const canSwipeToSales = dashboardMainCard.value === 'calendar' && deltaX > 0
+  if (!canSwipeToCalendar && !canSwipeToSales) {
+    dashboardSwipeDeltaX.value = Math.max(-28, Math.min(28, deltaX * 0.18))
+    return
+  }
+  dashboardSwipeDeltaX.value = Math.max(-140, Math.min(140, deltaX))
+}
+
+function onDashboardTouchEnd(event) {
+  if (!dashboardSwipeActive.value) {
+    return
+  }
+  const touch = event.changedTouches?.[0]
+  const deltaX = touch ? touch.clientX - dashboardSwipeStart.x : dashboardSwipeDeltaX.value
+  const deltaY = touch ? touch.clientY - dashboardSwipeStart.y : 0
+  const isHorizontalSwipe = Math.abs(deltaX) >= 54 && Math.abs(deltaX) > Math.abs(deltaY) * 1.18
+  const nextTarget = deltaX < 0 ? 'calendar' : 'sales'
+  resetDashboardSwipe()
+  if (isHorizontalSwipe) {
+    switchDashboardMainCard(nextTarget)
+  }
 }
 
 function onSalesSummaryLoaded(payload) {

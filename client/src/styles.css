@@ -3889,6 +3889,16 @@ img.theme-sensitive-logo {
   align-items: flex-end;
 }
 
+.sales-calendar-head > div:first-child {
+  flex: 0 0 auto;
+  min-width: max-content;
+}
+
+.sales-calendar-head h2,
+.sales-calendar-head .sales-summary-title-trigger {
+  white-space: nowrap;
+}
+
 .sales-calendar-summary-head {
   min-width: 220px;
 }
@@ -6060,6 +6070,10 @@ img.theme-sensitive-logo {
   gap: 16px;
 }
 
+.dashboard-home-main {
+  position: relative;
+}
+
 .dashboard-home-side {
   align-content: start;
   grid-auto-rows: min-content;
@@ -6067,7 +6081,7 @@ img.theme-sensitive-logo {
 
 .dashboard-sales-title-select {
   position: relative;
-  display: inline-flex;
+  display: flex;
   width: fit-content;
   max-width: 100%;
   cursor: pointer;
@@ -6084,6 +6098,11 @@ img.theme-sensitive-logo {
   color: color-mix(in srgb, var(--accent-color) 72%, var(--text-light));
 }
 
+.dashboard-sales-title-select:hover .dashboard-sales-scope-label,
+.dashboard-sales-title-select:focus-within .dashboard-sales-scope-label {
+  color: color-mix(in srgb, var(--accent-color) 72%, var(--text-light));
+}
+
 .dashboard-sales-title-select select {
   position: absolute;
   inset: 0;
@@ -6091,6 +6110,49 @@ img.theme-sensitive-logo {
   height: 100%;
   opacity: 0;
   cursor: pointer;
+}
+
+.dashboard-home-calendar-card {
+  min-height: 100%;
+}
+
+.dashboard-card-viewport {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--card-radius);
+  touch-action: pan-y;
+}
+
+.dashboard-card-track {
+  display: flex;
+  width: 200%;
+  transform: translateX(var(--dashboard-swipe-offset, 0px));
+  transition: transform 0.52s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.dashboard-card-track.show-calendar {
+  transform: translateX(calc(-50% + var(--dashboard-swipe-offset, 0px)));
+}
+
+.dashboard-card-track.is-dragging {
+  transition: none;
+}
+
+.dashboard-card-slide {
+  flex: 0 0 50%;
+  width: 50%;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.dashboard-card-slide.active {
+  pointer-events: auto;
+}
+
+.dashboard-card-slide > * {
+  height: 100%;
 }
 
 .dashboard-sales-settings-shell {

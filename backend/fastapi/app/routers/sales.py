@@ -2145,8 +2145,8 @@ def sales_calendar(
     breakdown_mode = ""
     breakdown_title = ""
     if salesperson and str(salesperson).strip():
-        breakdown_mode = ""
-        breakdown_title = ""
+        breakdown_mode = "salesperson"
+        breakdown_title = "销售员销售额"
     elif (shop_name and str(shop_name).strip()) or shop_id is not None:
         breakdown_mode = "salesperson"
         breakdown_title = "销售员销售额"
@@ -2162,7 +2162,7 @@ def sales_calendar(
         if breakdown_mode == "shop":
             label = _resolve_shop_name(row)
         elif breakdown_mode == "salesperson":
-            label = _resolve_salesperson(row)
+            label = _resolve_salesperson(row) or "未分配销售员"
         else:
             label = ""
         if label:
@@ -2173,7 +2173,7 @@ def sales_calendar(
                     "amount": 0.0,
                     "quantity": 0,
                     "orderNums": set(),
-                    "drilldownTitle": "店铺内销售员统计" if breakdown_mode == "shop" else "",
+                    "drilldownTitle": "店铺内销售员统计" if breakdown_mode == "shop" else "人员销售明细",
                     "drilldowns": {},
                 },
             )
@@ -2183,8 +2183,8 @@ def sales_calendar(
             if order_num:
                 type_cast(set, current["orderNums"]).add(order_num)
 
-            if breakdown_mode == "shop":
-                detail_label = _resolve_salesperson(row) or "未分配销售员"
+            if breakdown_mode in {"shop", "salesperson"}:
+                detail_label = (_resolve_salesperson(row) or "未分配销售员") if breakdown_mode == "shop" else label
                 drilldowns = type_cast(dict[str, dict[str, object]], current["drilldowns"])
                 detail = drilldowns.setdefault(
                     detail_label,

@@ -215,7 +215,20 @@
       <section class="card-surface sales-calendar-card motion-fade-slide" style="--motion-delay: 0.16s">
         <header class="panel-head sales-calendar-head">
           <div>
-            <h2>{{ isRepairMode ? '维修销售日历' : '销售日历' }}</h2>
+            <label class="dashboard-sales-title-select sales-calendar-scope-select" aria-label="切换日历点位">
+              <span class="panel-tag dashboard-sales-scope-label">{{ calendarScopeDisplayLabel }}</span>
+              <select :value="shopFilter" @change="onCalendarScopeChange">
+                <option value="">总销售额</option>
+                <option
+                  v-for="option in meta.shopOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+            <h2>日历</h2>
           </div>
           <div class="sales-summary-head-actions sales-calendar-summary-head">
             <div class="sales-kpi">
@@ -423,6 +436,7 @@
                     <div class="sales-calendar-breakdown-head">
                       <span>{{ calendarDetailDay?.breakdownTitle || '详细统计' }}</span>
                       <small v-if="calendarDetailDay?.breakdownMode === 'shop'">点击店铺销售额查看店铺内统计</small>
+                      <small v-else-if="calendarDetailDay?.breakdownMode === 'salesperson'">点击人员查看当日商品销售情况</small>
                     </div>
                     <div class="sales-calendar-breakdown-list">
                       <button
@@ -431,7 +445,7 @@
                         type="button"
                         class="sales-calendar-breakdown-item sales-calendar-breakdown-button"
                         :class="{ clickable: canOpenCalendarBreakdown(item) }"
-                        @click="canOpenCalendarBreakdown(item) ? openCalendarShopDetail(item.label) : null"
+                        @click="openCalendarBreakdown(item)"
                       >
                         <div class="sales-calendar-breakdown-main">
                           <span>{{ item.label }}</span>
@@ -458,7 +472,7 @@
 
                   <div class="sales-calendar-detail-stats sales-calendar-detail-stats-lg">
                     <article class="sales-calendar-detail-stat">
-                      <span>店铺销售额</span>
+                      <span>{{ calendarDetailDay?.breakdownMode === 'shop' ? '店铺销售额' : '人员销售额' }}</span>
                       <strong>{{ formatCalendarTooltipAmount(calendarDetailShop.amount) }}</strong>
                     </article>
                     <article class="sales-calendar-detail-stat">
@@ -508,7 +522,7 @@
                 <template v-else>
                   <button type="button" class="sales-calendar-detail-back" @click="closeCalendarPersonDetail">
                     <el-icon><ArrowLeft /></el-icon>
-                    <span>返回店铺详情</span>
+                    <span>{{ calendarDetailDay?.breakdownMode === 'salesperson' ? '返回当日总览' : '返回店铺详情' }}</span>
                   </button>
 
                   <div class="sales-calendar-detail-stats sales-calendar-detail-stats-lg">
@@ -769,7 +783,7 @@ import { useAuthStore } from '../stores/auth'
 import { confirmAction, confirmDestructiveAction } from '../utils/confirm'
 import { downloadCsvFile, escapeCsvCell } from '../utils/csv'
 import { getShanghaiParts } from '../utils/shanghaiTime'
-import { SHOP_TYPE_REPAIR, SHOP_TYPE_STORE, SHOP_TYPE_WAREHOUSE } from '../utils/shops'
+import { simplifyShopName, SHOP_TYPE_REPAIR, SHOP_TYPE_STORE, SHOP_TYPE_WAREHOUSE } from '../utils/shops'
 import { resolveTableActionWidth } from '../utils/tableActions'
 
 const authStore = useAuthStore()
@@ -881,6 +895,7 @@ const calendarYearOptions = computed(() => {
 })
 const calendarDisplayYear = computed(() => `${parseCalendarMonthToken(calendarMonth.value).year}年`)
 const calendarDisplayMonth = computed(() => `${String(parseCalendarMonthToken(calendarMonth.value).month).padStart(2, '0')}月`)
+const calendarScopeDisplayLabel = computed(() => `${shopFilter.value ? simplifyShopName(shopFilter.value) : '总'} · ${calendarDisplayMonth.value}`)
 
 const dialogForm = reactive({
   soldAt: '',
@@ -1435,10 +1450,20 @@ function closeCalendarShopDetail() {
   calendarPersonDetailLoading.value = false
 }
 
+function openCalendarBreakdown(item) {
+  if (!canOpenCalendarBreakdown(item)) {
+    return
+  }
+  openCalendarShopDetail(item.label)
+  if (calendarDetailDay.value?.breakdownMode === 'salesperson') {
+    void openCalendarPersonDetail(item.drilldowns[0])
+  }
+}
+
 function buildCalendarPersonQuery({ date, shopName, salesperson }) {
   return {
     ...buildFilterQuery(),
-    shop_name: shopName,
+    ...(shopName ? { shop_name: shopName } : {}),
     salesperson,
     date_from: date,
     date_to: date,
@@ -1506,7 +1531,7 @@ async function openCalendarPersonDetail(item) {
     token: authStore.token,
     query: buildCalendarPersonQuery({
       date: calendarDetailDay.value.date,
-      shopName: calendarDetailShop.value.label,
+      shopName: calendarDetailDay.value.breakdownMode === 'shop' ? calendarDetailShop.value.label : '',
       salesperson: item.label,
     }),
   })
@@ -1520,6 +1545,10 @@ async function openCalendarPersonDetail(item) {
 }
 
 function closeCalendarPersonDetail() {
+  if (calendarDetailDay.value?.breakdownMode === 'salesperson') {
+    closeCalendarShopDetail()
+    return
+  }
   calendarDetailPersonLabel.value = ''
   calendarDetailPersonEntries.value = []
   calendarPersonDetailLoading.value = false
@@ -1851,6 +1880,11 @@ function onSearch() {
   }
   page.value = 1
   void reloadAll()
+}
+
+function onCalendarScopeChange(event) {
+  shopFilter.value = String(event?.target?.value || '')
+  onSearch()
 }
 
 function onResetFilters() {

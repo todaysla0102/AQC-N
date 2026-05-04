@@ -317,7 +317,7 @@
 <script setup>
 import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { computed, onMounted, reactive, ref, useAttrs, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, useAttrs, watch } from 'vue'
 
 import { apiGet } from '../services/api'
 import { useAuthStore } from '../stores/auth'
@@ -371,6 +371,10 @@ const props = defineProps({
     type: String,
     default: '0.16s',
   },
+  autoRefreshMs: {
+    type: Number,
+    default: 0,
+  },
 })
 
 const emit = defineEmits(['update:scopeValue', 'scope-change', 'title-click', 'loaded'])
@@ -390,6 +394,9 @@ const calendarDetailShopLabel = ref('')
 const calendarDetailPersonLabel = ref('')
 const calendarPersonDetailLoading = ref(false)
 const calendarDetailPersonEntries = ref([])
+let calendarLoadRequestId = 0
+let autoRefreshTimer = null
+let autoRefreshPending = false
 
 const calendar = reactive({
   month: '',
@@ -669,6 +676,7 @@ function closeCalendarPersonDetail() {
 
 async function loadCalendar(options = {}) {
   const { silent = false, preserveDetail = false } = options
+  const requestId = ++calendarLoadRequestId
   if (!silent) {
     calendarLoading.value = true
   }
@@ -682,6 +690,9 @@ async function loadCalendar(options = {}) {
       month: calendarMonth.value,
     },
   })
+  if (requestId !== calendarLoadRequestId) {
+    return
+  }
   if (!silent) {
     calendarLoading.value = false
   }
@@ -700,6 +711,29 @@ async function loadCalendar(options = {}) {
   calendar.activeDays = Number(payload.activeDays || 0)
   calendar.days = payload.days || []
   emit('loaded', { ...payload })
+}
+
+function clearAutoRefreshTimer() {
+  if (autoRefreshTimer !== null && typeof window !== 'undefined') {
+    window.clearInterval(autoRefreshTimer)
+    autoRefreshTimer = null
+  }
+}
+
+function startAutoRefreshTimer() {
+  clearAutoRefreshTimer()
+  if (typeof window === 'undefined' || Number(props.autoRefreshMs || 0) <= 0) {
+    return
+  }
+  autoRefreshTimer = window.setInterval(() => {
+    if (document.visibilityState === 'hidden' || autoRefreshPending) {
+      return
+    }
+    autoRefreshPending = true
+    loadCalendar({ silent: true, preserveDetail: true }).finally(() => {
+      autoRefreshPending = false
+    })
+  }, Number(props.autoRefreshMs))
 }
 
 function shiftCalendarMonth(step) {
@@ -737,11 +771,24 @@ watch(querySignature, () => {
   void loadCalendar()
 })
 
+watch(
+  () => props.autoRefreshMs,
+  () => {
+    startAutoRefreshTimer()
+  },
+)
+
 onMounted(() => {
   void loadCalendar()
+  startAutoRefreshTimer()
+})
+
+onBeforeUnmount(() => {
+  clearAutoRefreshTimer()
 })
 
 defineExpose({
   loadCalendar,
+  reload: loadCalendar,
 })
 </script>

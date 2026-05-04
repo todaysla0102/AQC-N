@@ -24,6 +24,7 @@
                 :aria-hidden="dashboardMainCard !== 'sales'"
               >
                 <SalesSummaryPanel
+                  ref="salesSummaryPanelRef"
                   :key="`sales-${salesPanelKey}`"
                   panel-tag="主页"
                   :display-title="salesSummaryTitle"
@@ -68,6 +69,7 @@
                 :aria-hidden="dashboardMainCard !== 'calendar'"
               >
                 <SalesCalendarCard
+                  ref="dashboardCalendarCardRef"
                   class="dashboard-home-calendar-card"
                   title="日历"
                   title-interactive
@@ -77,6 +79,7 @@
                   :scope-options="dashboardCalendarScopeOptions"
                   :can-select-total-scope="canSelectTotalSalesScope"
                   motion-delay="0s"
+                  :auto-refresh-ms="15000"
                   @title-click="switchDashboardMainCard('sales')"
                   @scope-change="onDashboardCalendarScopeChange"
                 />
@@ -368,6 +371,8 @@ const scheduleSummary = reactive({
 const showScheduleCard = computed(() => authStore.can('shops.read'))
 const showSideColumn = computed(() => showScheduleCard.value || authStore.can('workorders.read'))
 const salesPanelKey = ref(0)
+const salesSummaryPanelRef = ref(null)
+const dashboardCalendarCardRef = ref(null)
 const dashboardMainCard = ref('sales')
 const dashboardSwipeActive = ref(false)
 const dashboardSwipeStart = reactive({
@@ -676,10 +681,20 @@ function onDashboardCalendarScopeChange(value) {
 function switchDashboardMainCard(target) {
   const nextTarget = target === 'calendar' ? 'calendar' : 'sales'
   if (dashboardMainCard.value === nextTarget) {
+    refreshDashboardMainCard(nextTarget)
     return
   }
   resetDashboardSwipe()
   dashboardMainCard.value = nextTarget
+  refreshDashboardMainCard(nextTarget)
+}
+
+function refreshDashboardMainCard(target = dashboardMainCard.value) {
+  if (target === 'calendar') {
+    dashboardCalendarCardRef.value?.reload?.({ silent: true, preserveDetail: true })
+    return
+  }
+  salesSummaryPanelRef.value?.reload?.({ animate: false })
 }
 
 function resetDashboardSwipe() {

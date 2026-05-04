@@ -489,6 +489,33 @@ function buildCalendarMonthToken(year, month) {
   return `${Number(year || 0)}-${String(Number(month || 1)).padStart(2, '0')}`
 }
 
+function formatCalendarDateToken(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function buildEmptyCalendarDays(monthToken = calendarMonth.value) {
+  const { year, month } = parseCalendarMonthToken(monthToken)
+  const monthStart = new Date(year, Math.max(month - 1, 0), 1)
+  const gridStart = new Date(monthStart)
+  gridStart.setDate(monthStart.getDate() - monthStart.getDay())
+  const todayToken = formatCalendarDateToken(new Date())
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(gridStart)
+    date.setDate(gridStart.getDate() + index)
+    const dateToken = formatCalendarDateToken(date)
+    return {
+      date: dateToken,
+      day: date.getDate(),
+      amount: 0,
+      quantity: 0,
+      averageTicketValue: 0,
+      isCurrentMonth: date.getMonth() === monthStart.getMonth(),
+      isToday: dateToken === todayToken,
+      breakdowns: [],
+    }
+  })
+}
+
 function syncCalendarPickerState() {
   const parsed = parseCalendarMonthToken(calendarMonth.value)
   calendarPickerYear.value = parsed.year
@@ -709,7 +736,7 @@ async function loadCalendar(options = {}) {
   calendar.totalAmount = Number(payload.totalAmount || 0)
   calendar.totalQuantity = Number(payload.totalQuantity || 0)
   calendar.activeDays = Number(payload.activeDays || 0)
-  calendar.days = payload.days || []
+  calendar.days = (payload.days || []).length ? payload.days : buildEmptyCalendarDays(calendar.month)
   emit('loaded', { ...payload })
 }
 

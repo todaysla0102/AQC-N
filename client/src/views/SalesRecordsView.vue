@@ -199,6 +199,61 @@
       </section>
     </section>
 
+    <div class="sales-records-overview-mobile">
+      <div class="dashboard-card-viewport">
+        <div class="dashboard-card-track" :class="{ 'show-calendar': recordsOverviewCard === 'calendar' }">
+          <div class="dashboard-card-slide" :class="{ active: recordsOverviewCard === 'sales' }" :aria-hidden="recordsOverviewCard !== 'sales'">
+            <SalesSummaryPanel
+              ref="summaryPanelRef"
+              class="sales-records-summary-panel"
+              :panel-tag="isRepairMode ? '维修销售统计' : '销售统计'"
+              :display-title="isRepairMode ? '维修销售额' : '销售额'"
+              :panel-tag-suffix="summaryFilterLabel"
+              :allow-toggle-chart="false"
+              :chart-initially-hidden="false"
+              :query="summaryQuery"
+              :fallback-summary="mobileSummaryFallback"
+              :auto-refresh-ms="15000"
+              title-interactive
+              kpi-interactive
+              :show-stats="false"
+              @loaded="onMobileSummaryLoaded"
+              @title-click="switchRecordsOverviewCard('calendar')"
+              @kpi-click="mobileSummaryDetailVisible = true"
+            >
+              <template #panel-tag>
+                <label class="dashboard-sales-title-select" aria-label="切换销售范围">
+                  <span class="panel-tag dashboard-sales-scope-label">{{ shopFilter ? simplifyShopName(shopFilter) : '总销售额' }}</span>
+                  <select :value="shopFilter" @change="onMobileSummaryScopeChange">
+                    <option value="">{{ isRepairMode ? '总维修销售额' : '总销售额' }}</option>
+                    <option v-for="option in meta.shopOptions" :key="option.value" :value="option.value">
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+              </template>
+            </SalesSummaryPanel>
+          </div>
+          <div class="dashboard-card-slide" :class="{ active: recordsOverviewCard === 'calendar' }" :aria-hidden="recordsOverviewCard !== 'calendar'">
+            <SalesCalendarCard
+              class="sales-records-calendar-panel"
+              title="日历"
+              title-interactive
+              :query="summaryQuery"
+              :scope-value="shopFilter"
+              :scope-label="calendarScopeDisplayLabel"
+              :scope-options="calendarScopeOptions"
+              :can-select-total-scope="true"
+              :total-scope-label="isRepairMode ? '总维修销售额' : '总销售额'"
+              :auto-refresh-ms="15000"
+              @title-click="switchRecordsOverviewCard('sales')"
+              @scope-change="onSalesCalendarCardScopeChange"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="sales-records-overview-grid">
       <SalesSummaryPanel
         ref="summaryPanelRef"
@@ -334,6 +389,32 @@
     </div>
 
     <section ref="recordsSectionRef" class="card-surface sales-record-table motion-fade-slide" style="--motion-delay: 0.32s">
+      <section class="mobile-sales-record-list" v-loading="loading">
+        <article
+          v-for="row in records"
+          :key="row.id"
+          class="mobile-sales-record-card"
+          role="button"
+          tabindex="0"
+          @click="openMobileRecordActions(row)"
+          @keyup.enter="openMobileRecordActions(row)"
+        >
+          <div class="mobile-sales-record-main">
+            <strong>{{ mobileRecordTitle(row) }}</strong>
+            <p class="mobile-sales-record-subtitle">
+              <span class="mobile-sales-record-currency">¥</span>
+              <strong>{{ formatMoney(row.receivedAmount) }}</strong>
+              <small v-if="recordDiscountAmount(row) > 0"> · -{{ formatMoney(recordDiscountAmount(row)) }}</small>
+              <small v-if="row.discountDisplay && row.discountDisplay !== '/'"> · {{ row.discountDisplay }}折</small>
+            </p>
+            <small>{{ mobileRecordMeta(row) }}</small>
+          </div>
+        </article>
+        <div v-if="!records.length && !loading" class="mobile-sales-empty">
+          暂无销售记录
+        </div>
+      </section>
+
       <div class="table-shell open-table-shell">
         <el-table
           :data="records"
@@ -397,6 +478,117 @@
         />
       </div>
     </section>
+
+    <MobileBottomSheet
+      v-if="isMobileViewport"
+      v-model="mobileSummaryDetailVisible"
+      title="销售额详情"
+      :subtitle="summaryFilterLabel || (shopFilter ? simplifyShopName(shopFilter) : '总销售额')"
+      :initial-snap="0.58"
+      :expanded-snap="0.82"
+    >
+      <section class="sales-summary-mobile-detail-grid">
+        <article v-for="item in mobileSummaryDetailItems" :key="item.key">
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value }}</strong>
+        </article>
+      </section>
+    </MobileBottomSheet>
+
+    <MobileBottomSheet
+      v-if="isMobileViewport"
+      v-model="mobileRecordActionVisible"
+      :title="mobileRecordTitle(activeMobileRecord)"
+      subtitle="销售记录"
+      :initial-snap="0.42"
+      :expanded-snap="0.68"
+    >
+      <section class="work-order-category-chooser sales-record-mobile-action-menu">
+        <button type="button" class="work-order-category-card" @click="openMobileRecordDetail">
+          <strong>订单详情</strong>
+          <small>{{ activeMobileRecord?.orderNum || '查看完整销售信息' }}</small>
+        </button>
+        <button type="button" class="work-order-category-card" :disabled="!canOpenMobileDistribution(activeMobileRecord)" @click="openMobileRecordDistribution">
+          <strong>商品分布</strong>
+          <small>{{ canOpenMobileDistribution(activeMobileRecord) ? '查询该商品库存分布' : '当前记录无商品分布' }}</small>
+        </button>
+        <button v-if="canEditSalesRecords" type="button" class="work-order-category-card" @click="editMobileRecord">
+          <strong>编辑</strong>
+          <small>复用现有编辑逻辑</small>
+        </button>
+        <button v-if="authStore.can('sales.manage')" type="button" class="work-order-category-card danger" @click="deleteMobileRecord">
+          <strong>删除</strong>
+          <small>删除后统计会同步变化</small>
+        </button>
+      </section>
+    </MobileBottomSheet>
+
+    <MobileBottomSheet
+      v-if="isMobileViewport"
+      v-model="mobileRecordDetailVisible"
+      :title="mobileRecordTitle(activeMobileRecord)"
+      subtitle="订单详情"
+      :initial-snap="0.72"
+      :expanded-snap="0.92"
+    >
+      <section class="sales-record-mobile-detail" v-if="activeMobileRecord">
+        <div class="sales-record-mobile-detail-hero">
+          <strong>¥ {{ formatMoney(activeMobileRecord.receivedAmount) }}</strong>
+          <span>{{ activeMobileRecord.discountDisplay && activeMobileRecord.discountDisplay !== '/' ? `${activeMobileRecord.discountDisplay}折` : '原价' }}</span>
+        </div>
+        <div class="sales-record-mobile-detail-grid">
+          <article v-for="item in mobileRecordDetailItems" :key="item.label">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.value || '-' }}</strong>
+          </article>
+        </div>
+      </section>
+    </MobileBottomSheet>
+
+    <MobileBottomSheet
+      v-if="isMobileViewport"
+      v-model="mobileDistributionVisible"
+      title="商品分布"
+      subtitle="销售记录"
+      :initial-snap="0.7"
+      :expanded-snap="0.92"
+    >
+      <div class="goods-distribution-shell goods-distribution-mobile-shell" v-loading="mobileDistributionLoading">
+        <div class="goods-distribution-mobile-panel">
+          <section class="goods-distribution-mobile-summary-bar">
+            <article class="goods-distribution-mobile-summary-item">
+              <span>总库存</span>
+              <strong>{{ mobileDistributionTotalStock }}</strong>
+            </article>
+            <article class="goods-distribution-mobile-summary-item">
+              <span>库存金额</span>
+              <strong>¥ {{ formatMoney(mobileDistributionTotalAmount) }}</strong>
+            </article>
+          </section>
+          <section class="goods-distribution-mobile-title">
+            <strong>{{ mobileDistributionItem?.model || mobileRecordTitle(activeMobileRecord) }}</strong>
+            <p>{{ [mobileDistributionItem?.brand, mobileDistributionItem?.series].filter(Boolean).join(' / ') || '库存分布' }}</p>
+          </section>
+        </div>
+        <section v-if="mobileDistributionRows.length" class="goods-distribution-mobile-list">
+          <article v-for="row in mobileDistributionRows" :key="row.shopId" class="goods-distribution-mobile-row">
+            <div class="goods-distribution-mobile-main">
+              <strong>{{ simplifyShopName(row.shopName || row.shopShortName) || '未命名点位' }}</strong>
+              <span>{{ row.shopType === SHOP_TYPE_WAREHOUSE ? '仓库' : '店铺' }}</span>
+            </div>
+            <div class="goods-distribution-mobile-side">
+              <small>库存数量</small>
+              <strong>{{ row.quantity }}</strong>
+              <span>¥ {{ formatMoney(row.lineAmount) }}</span>
+            </div>
+          </article>
+        </section>
+        <div v-else class="goods-distribution-mobile-empty">
+          <strong>暂无库存分布</strong>
+          <p>当前商品还没有可展示库存。</p>
+        </div>
+      </div>
+    </MobileBottomSheet>
 
     <Teleport to="body">
       <transition name="calendar-detail-pop">
@@ -774,8 +966,10 @@ import { useRoute, useRouter } from 'vue-router'
 
 import CollapsePanelTransition from '../components/CollapsePanelTransition.vue'
 import ExportColumnsDialog from '../components/ExportColumnsDialog.vue'
+import MobileBottomSheet from '../components/MobileBottomSheet.vue'
 import ResponsiveDialog from '../components/ResponsiveDialog.vue'
 import ResponsiveTableActions from '../components/ResponsiveTableActions.vue'
+import SalesCalendarCard from '../components/SalesCalendarCard.vue'
 import SalesSummaryPanel from '../components/SalesSummaryPanel.vue'
 import { useMobileViewport } from '../composables/useMobileViewport'
 import { apiDelete, apiGet, apiPut } from '../services/api'
@@ -809,6 +1003,7 @@ const dateRange = ref([])
 const sortField = ref('sold_at')
 const sortOrder = ref('desc')
 const records = ref([])
+const recordsOverviewCard = ref('sales')
 const calendarMonth = ref(getCurrentMonthToken())
 const calendarTransitionName = ref('calendar-slide-next')
 const calendarPickerVisible = ref(false)
@@ -838,6 +1033,16 @@ const salesExportDialogVisible = ref(false)
 const salesExportPending = ref(false)
 const salesExportColumnKeys = ref([])
 const salesExportPresets = ref(loadSalesExportPresets())
+const activeMobileRecord = ref(null)
+const mobileRecordActionVisible = ref(false)
+const mobileRecordDetailVisible = ref(false)
+const mobileDistributionVisible = ref(false)
+const mobileDistributionLoading = ref(false)
+const mobileDistributionItem = ref(null)
+const mobileDistributionRows = ref([])
+const mobileDistributionTotalStock = ref(0)
+const mobileSummaryDetailVisible = ref(false)
+const mobileSummaryPayload = ref(null)
 const actionColumnWidth = computed(() => resolveTableActionWidth([[
   canEditSalesRecords.value ? '编辑' : '',
   authStore.can('sales.manage') ? '删除' : '',
@@ -864,6 +1069,7 @@ const RECOMMENDED_PERIOD_PRESET_LABELS = {
   this_year: '本年',
   last_year: '去年',
 }
+const localTestMockRecordsEnabled = import.meta.env.VITE_LOCAL_TEST_LOGIN === 'true'
 
 const meta = reactive({
   totalItems: 0,
@@ -896,6 +1102,57 @@ const calendarYearOptions = computed(() => {
 const calendarDisplayYear = computed(() => `${parseCalendarMonthToken(calendarMonth.value).year}年`)
 const calendarDisplayMonth = computed(() => `${String(parseCalendarMonthToken(calendarMonth.value).month).padStart(2, '0')}月`)
 const calendarScopeDisplayLabel = computed(() => `${shopFilter.value ? simplifyShopName(shopFilter.value) : '总'} · ${calendarDisplayMonth.value}`)
+const calendarScopeOptions = computed(() => meta.shopOptions.map((option) => ({
+  label: option.label,
+  value: option.value,
+})))
+const mobileDistributionTotalAmount = computed(() => (
+  mobileDistributionRows.value.reduce((sum, item) => sum + Number(item.lineAmount || 0), 0)
+))
+const mobileSummaryDetailItems = computed(() => {
+  const payload = mobileSummaryPayload.value || {}
+  return [
+    { key: 'received', label: '实收总额', value: `¥ ${formatMoney(payload.receivedTotal || 0)}` },
+    { key: 'receivable', label: '应收总额', value: `¥ ${formatMoney(payload.receivableTotal || 0)}` },
+    { key: 'averageTicket', label: '客单价', value: `¥ ${formatMoney(payload.averageTicketValue || 0)}` },
+    { key: 'quantity', label: '销售数量', value: String(payload.quantityTotal || 0) },
+    { key: 'topSalesperson', label: payload.topSalespersonLabel || '今日个人销冠', value: payload.topSalespersonName || '暂无' },
+    { key: 'topShop', label: payload.topShopLabel || '今日店铺销冠', value: payload.topShopName || '暂无' },
+  ]
+})
+const mobileSummaryFallback = computed(() => {
+  if (!localTestMockRecordsEnabled || isRepairMode.value) {
+    return null
+  }
+  const mockRows = createLocalMockSalesRecords()
+  if (!mockRows.length) {
+    return null
+  }
+  const receivedTotal = mockRows.reduce((sum, row) => sum + Number(row.receivedAmount || 0), 0)
+  const receivableTotal = mockRows.reduce((sum, row) => sum + Number(row.receivableAmount || 0), 0)
+  const couponTotal = mockRows.reduce((sum, row) => sum + Number(row.couponAmount || 0), 0)
+  const quantityTotal = mockRows.reduce((sum, row) => sum + Number(row.quantity || 0), 0)
+  return {
+    sales: receivedTotal,
+    receivedTotal,
+    receivableTotal,
+    couponTotal,
+    discountAmountTotal: Math.max(receivableTotal - receivedTotal, 0),
+    averageTicketValue: quantityTotal > 0 ? Number((receivedTotal / quantityTotal).toFixed(2)) : 0,
+    quantityTotal,
+    orderCount: mockRows.length,
+    topSalespersonLabel: '今日个人销冠',
+    topSalespersonName: mockRows[0]?.salesperson || '暂无',
+    topShopLabel: '今日店铺销冠',
+    topShopName: mockRows[0]?.shopName ? simplifyShopName(mockRows[0].shopName) : '暂无',
+    metrics: [
+      { key: 'day', label: '本日', sales: receivedTotal, uplift: 0 },
+      { key: 'week', label: '本周', sales: receivedTotal, uplift: 0 },
+      { key: 'month', label: '本月', sales: receivedTotal, uplift: 0 },
+      { key: 'ytd', label: '年累计', sales: receivedTotal, uplift: 0 },
+    ],
+  }
+})
 
 const dialogForm = reactive({
   soldAt: '',
@@ -1056,11 +1313,306 @@ const dialogDiscountDisplay = computed(() => {
   return rate.toFixed(2)
 })
 
+const mobileRecordDetailItems = computed(() => {
+  const row = activeMobileRecord.value
+  if (!row) {
+    return []
+  }
+  return [
+    ...(!isRepairMode.value
+      ? [
+        { label: '商品型号', value: row.goodsModel },
+        { label: '品牌', value: row.goodsBrand },
+        { label: '系列', value: row.goodsSeries },
+        { label: '条码', value: row.goodsBarcode },
+        { label: '单价', value: `¥ ${formatMoney(row.unitPrice)}` },
+        { label: '应收金额', value: `¥ ${formatMoney(row.receivableAmount)}` },
+        { label: '优惠券', value: `¥ ${formatMoney(row.couponAmount)}` },
+        { label: '发货店铺', value: simplifyShopName(row.shipShopName) },
+      ]
+      : []),
+    { label: '实收金额', value: `¥ ${formatMoney(row.receivedAmount)}` },
+    { label: isRepairMode.value ? '维修点' : '销售店铺', value: simplifyShopName(row.shopName) },
+    { label: isRepairMode.value ? '工程师' : '销售员', value: row.salesperson },
+    { label: '销售时间', value: row.soldAt },
+    { label: '订单号', value: row.orderNum },
+    { label: '客户姓名', value: row.customerName },
+    { label: '渠道', value: row.channel },
+    { label: '备注', value: row.note },
+  ].filter((item) => String(item.value || '').trim())
+})
+
 function formatMoney(value) {
   return new Intl.NumberFormat('zh-CN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value || 0)
+}
+
+function switchRecordsOverviewCard(card) {
+  recordsOverviewCard.value = card === 'calendar' ? 'calendar' : 'sales'
+}
+
+function onSalesCalendarCardScopeChange(value) {
+  shopFilter.value = String(value || '')
+  page.value = 1
+  void reloadAll()
+}
+
+function onMobileSummaryScopeChange(event) {
+  const nextValue = String(event?.target?.value || '')
+  shopFilter.value = nextValue
+  page.value = 1
+  void reloadAll()
+}
+
+function onMobileSummaryLoaded(payload) {
+  const normalized = payload || {}
+  if (localTestMockRecordsEnabled && Number(normalized.receivedTotal || normalized.sales || 0) === 0) {
+    const mockRows = createLocalMockSalesRecords()
+    const receivedTotal = mockRows.reduce((sum, row) => sum + Number(row.receivedAmount || 0), 0)
+    const receivableTotal = mockRows.reduce((sum, row) => sum + Number(row.receivableAmount || 0), 0)
+    const quantityTotal = mockRows.reduce((sum, row) => sum + Number(row.quantity || 0), 0)
+    mobileSummaryPayload.value = {
+      ...normalized,
+      receivedTotal,
+      receivableTotal,
+      averageTicketValue: quantityTotal > 0 ? Number((receivedTotal / quantityTotal).toFixed(2)) : 0,
+      quantityTotal,
+      topSalespersonLabel: '今日个人销冠',
+      topSalespersonName: mockRows[0]?.salesperson || '暂无',
+      topShopLabel: '今日店铺销冠',
+      topShopName: mockRows[0]?.shopName ? simplifyShopName(mockRows[0].shopName) : '暂无',
+    }
+    return
+  }
+  mobileSummaryPayload.value = normalized
+}
+
+function recordDiscountAmount(row) {
+  return Math.max(0, Number(row?.receivableAmount || 0) - Number(row?.receivedAmount || 0))
+}
+
+function mobileRecordTitle(row) {
+  if (!row) {
+    return '销售记录'
+  }
+  if (isRepairMode.value) {
+    return row.shopName || row.orderNum || '维修销售'
+  }
+  return row.goodsModel || row.orderNum || '未填写型号'
+}
+
+function mobileRecordSubtitle(row) {
+  if (!row) {
+    return ''
+  }
+  const discountAmount = recordDiscountAmount(row)
+  return [
+    `¥ ${formatMoney(row.receivedAmount)}`,
+    discountAmount > 0 ? `-¥ ${formatMoney(discountAmount)}` : '',
+    row.discountDisplay && row.discountDisplay !== '/' ? `${row.discountDisplay}折` : '',
+  ].filter(Boolean).join(' · ')
+}
+
+function mobileRecordMeta(row) {
+  if (!row) {
+    return ''
+  }
+  return [
+    row.salesperson,
+    simplifyShopName(row.shopName),
+    row.soldAt,
+  ].filter(Boolean).join(' · ')
+}
+
+function createLocalMockSalesRecords() {
+  if (!localTestMockRecordsEnabled || isRepairMode.value) {
+    return []
+  }
+  const baseRows = [
+    {
+      id: -1001,
+      soldAt: '2026-05-04 10:12:00',
+      orderNum: 'MOCK20260504001',
+      goodsId: 1,
+      goodsBrand: 'CASIO',
+      goodsSeries: 'G-SHOCK',
+      goodsModel: 'GM-2100-1A',
+      goodsBarcode: 'MOCK-GM2100',
+      unitPrice: 1490,
+      receivableAmount: 1490,
+      receivedAmount: 1390,
+      couponAmount: 0,
+      quantity: 1,
+      discountDisplay: '9.33',
+      channel: '门店',
+      shopId: authStore.shopId || 1,
+      shopName: authStore.user?.shopName || '武昌万象城Casio专卖店',
+      shipShopId: authStore.shopId || 1,
+      shipShopName: authStore.user?.shopName || '武昌万象城Casio专卖店',
+      salesperson: authStore.displayName || authStore.user?.username || 'La',
+      customerName: '测试顾客A',
+      note: '移动端验收模拟订单',
+    },
+    {
+      id: -1002,
+      soldAt: '2026-05-04 12:36:00',
+      orderNum: 'MOCK20260504002',
+      goodsId: 2,
+      goodsBrand: 'CASIO',
+      goodsSeries: 'BABY-G',
+      goodsModel: 'BA-110X-7A',
+      goodsBarcode: 'MOCK-BA110',
+      unitPrice: 990,
+      receivableAmount: 990,
+      receivedAmount: 990,
+      couponAmount: 0,
+      quantity: 1,
+      discountDisplay: '/',
+      channel: '门店',
+      shopId: authStore.shopId || 1,
+      shopName: authStore.user?.shopName || '武昌万象城Casio专卖店',
+      shipShopId: authStore.shopId || 1,
+      shipShopName: authStore.user?.shopName || '武昌万象城Casio专卖店',
+      salesperson: authStore.displayName || authStore.user?.username || 'La',
+      customerName: '测试顾客B',
+      note: '原价销售模拟订单',
+    },
+    {
+      id: -1003,
+      soldAt: '2026-05-03 18:24:00',
+      orderNum: 'MOCK20260503001',
+      goodsId: 3,
+      goodsBrand: 'CASIO',
+      goodsSeries: 'EDIFICE',
+      goodsModel: 'ECB-2000DC-1A',
+      goodsBarcode: 'MOCK-ECB2000',
+      unitPrice: 1890,
+      receivableAmount: 1890,
+      receivedAmount: 1690,
+      couponAmount: 50,
+      quantity: 1,
+      discountDisplay: '8.94',
+      channel: '小程序',
+      shopId: authStore.shopId || 1,
+      shopName: authStore.user?.shopName || '武昌万象城Casio专卖店',
+      shipShopId: authStore.shopId || 1,
+      shipShopName: authStore.user?.shopName || '武昌万象城Casio专卖店',
+      salesperson: authStore.displayName || authStore.user?.username || 'La',
+      customerName: '测试顾客C',
+      note: '小程序渠道模拟订单',
+    },
+    {
+      id: -1004,
+      soldAt: '2026-05-02 15:08:00',
+      orderNum: 'MOCK20260502001',
+      goodsId: 4,
+      goodsBrand: 'CASIO',
+      goodsSeries: 'PRO TREK',
+      goodsModel: 'PRW-61Y-3',
+      goodsBarcode: 'MOCK-PRW61',
+      unitPrice: 2690,
+      receivableAmount: 2690,
+      receivedAmount: 2490,
+      couponAmount: 0,
+      quantity: 1,
+      discountDisplay: '9.26',
+      channel: '私域',
+      shopId: authStore.shopId || 1,
+      shopName: authStore.user?.shopName || '武昌万象城Casio专卖店',
+      shipShopId: authStore.shopId || 1,
+      shipShopName: authStore.user?.shopName || '武昌万象城Casio专卖店',
+      salesperson: authStore.displayName || authStore.user?.username || 'La',
+      customerName: '测试顾客D',
+      note: '私域模拟订单',
+    },
+  ]
+  const keywordText = String(keyword.value || '').trim().toLowerCase()
+  const orderText = String(orderNumFilter.value || '').trim().toLowerCase()
+  const brandText = String(brandFilter.value || '').trim()
+  const seriesText = String(seriesFilter.value || '').trim()
+  const shopText = String(shopFilter.value || '').trim()
+  const salespersonText = String(salespersonFilter.value || '').trim()
+  return baseRows.filter((row) => {
+    const haystack = [row.orderNum, row.goodsBrand, row.goodsSeries, row.goodsModel, row.shopName, row.salesperson].join(' ').toLowerCase()
+    if (keywordText && !haystack.includes(keywordText)) return false
+    if (orderText && !String(row.orderNum || '').toLowerCase().includes(orderText)) return false
+    if (brandText && row.goodsBrand !== brandText) return false
+    if (seriesText && row.goodsSeries !== seriesText) return false
+    if (shopText && row.shopName !== shopText) return false
+    if (salespersonText && row.salesperson !== salespersonText) return false
+    return true
+  })
+}
+
+function openMobileRecordActions(row) {
+  activeMobileRecord.value = row
+  mobileRecordActionVisible.value = true
+}
+
+function openMobileRecordDetail() {
+  mobileRecordActionVisible.value = false
+  mobileRecordDetailVisible.value = true
+}
+
+function canOpenMobileDistribution(row) {
+  return !isRepairMode.value && Number(row?.goodsId || 0) > 0
+}
+
+async function openMobileRecordDistribution() {
+  const row = activeMobileRecord.value
+  if (!canOpenMobileDistribution(row)) {
+    ElMessage.warning('当前记录没有可查询的商品分布')
+    return
+  }
+  mobileRecordActionVisible.value = false
+  mobileDistributionVisible.value = true
+  mobileDistributionLoading.value = true
+  const payload = await apiGet(`/goods/items/${Number(row.goodsId)}/inventory`, {
+    token: authStore.token,
+    timeoutMs: 12000,
+  })
+  mobileDistributionLoading.value = false
+  if (!payload?.success) {
+    mobileDistributionItem.value = null
+    mobileDistributionRows.value = []
+    mobileDistributionTotalStock.value = 0
+    ElMessage.error(payload?.message || '商品分布加载失败')
+    return
+  }
+  const unitPrice = Number(payload.item?.price || row.unitPrice || 0)
+  mobileDistributionItem.value = payload.item || {
+    model: row.goodsModel,
+    brand: row.goodsBrand,
+    series: row.goodsSeries,
+  }
+  mobileDistributionTotalStock.value = Number(payload.totalStock || 0)
+  mobileDistributionRows.value = (payload.inventories || []).map((item) => {
+    const quantity = Number(item.quantity || 0)
+    return {
+      ...item,
+      quantity,
+      unitPrice,
+      lineAmount: Number((quantity * unitPrice).toFixed(2)),
+    }
+  })
+}
+
+async function editMobileRecord() {
+  const row = activeMobileRecord.value
+  mobileRecordActionVisible.value = false
+  if (row) {
+    await openEdit(row)
+  }
+}
+
+async function deleteMobileRecord() {
+  const row = activeMobileRecord.value
+  mobileRecordActionVisible.value = false
+  if (row?.id) {
+    await onDelete(row.id)
+  }
 }
 
 function salesTableSummary({ columns, data }) {
@@ -1776,7 +2328,14 @@ async function loadRecords(options = {}) {
     return
   }
 
-  records.value = payload.records || []
+  const rows = payload.records || []
+  if (!rows.length) {
+    const mockRows = createLocalMockSalesRecords()
+    records.value = mockRows.slice((page.value - 1) * pageSize.value, page.value * pageSize.value)
+    total.value = mockRows.length
+    return
+  }
+  records.value = rows
   total.value = Number(payload.total || 0)
 }
 

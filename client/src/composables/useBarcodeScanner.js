@@ -232,6 +232,18 @@ export function useBarcodeScanner({ onDetected, formats } = {}) {
     }
   }
 
+  async function waitForVideoElement(timeoutMs = 1200) {
+    const startedAt = Date.now()
+    while (Date.now() - startedAt < timeoutMs) {
+      await nextTick()
+      await new Promise((resolve) => window.requestAnimationFrame(resolve))
+      if (videoRef.value?.isConnected) {
+        return true
+      }
+    }
+    return Boolean(videoRef.value)
+  }
+
   async function startScanner() {
     if (!supportsCameraScan()) {
       scannerError.value = '当前浏览器环境不支持摄像头扫码，请改用扫码枪或手动输入'
@@ -239,10 +251,9 @@ export function useBarcodeScanner({ onDetected, formats } = {}) {
     }
 
     scannerPending.value = true
-    await nextTick()
-    await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    const videoReady = await waitForVideoElement()
 
-    if (!videoRef.value) {
+    if (!videoReady || !videoRef.value) {
       scannerPending.value = false
       scannerError.value = '扫码画面尚未就绪，请稍后重试'
       return false

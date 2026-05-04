@@ -196,6 +196,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  fallbackSummary: {
+    type: Object,
+    default: null,
+  },
 })
 const emit = defineEmits(['loaded', 'title-click', 'kpi-click'])
 
@@ -448,37 +452,40 @@ async function fetchSummary(period = activePeriod.value, options = {}) {
     return
   }
 
-  activePeriod.value = payload.period
-  summary.title = payload.title || '销售额'
-  summary.sales = Number(payload.sales || 0)
-  summary.uplift = Number(payload.uplift || 0)
-  summary.metrics = payload.metrics || []
-  summary.points = payload.points || []
-  summary.yTicks = payload.yTicks || []
-  summary.receivableTotal = Number(payload.receivableTotal || 0)
-  summary.receivedTotal = Number(payload.receivedTotal || 0)
-  summary.couponTotal = Number(payload.couponTotal || 0)
-  summary.discountAmountTotal = Number(payload.discountAmountTotal || 0)
-  summary.averageTicketValue = Number(payload.averageTicketValue || 0)
-  summary.quantityTotal = Number(payload.quantityTotal || 0)
-  summary.orderCount = Number(payload.orderCount || 0)
-  summary.topSalespersonLabel = String(payload.topSalespersonLabel || '今日个人销冠')
-  summary.topShopLabel = String(payload.topShopLabel || '今日店铺销冠')
-  summary.topSalespersonName = String(payload.topSalespersonName || '暂无')
-  summary.topShopName = String(payload.topShopName || '暂无')
+  const fallbackSummary = props.fallbackSummary && Number(payload.sales || payload.receivedTotal || 0) === 0 ? props.fallbackSummary : null
+  const displayPayload = fallbackSummary ? { ...payload, ...fallbackSummary } : payload
+
+  activePeriod.value = displayPayload.period
+  summary.title = displayPayload.title || '销售额'
+  summary.sales = Number(displayPayload.sales || 0)
+  summary.uplift = Number(displayPayload.uplift || 0)
+  summary.metrics = displayPayload.metrics || []
+  summary.points = displayPayload.points || []
+  summary.yTicks = displayPayload.yTicks || []
+  summary.receivableTotal = Number(displayPayload.receivableTotal || 0)
+  summary.receivedTotal = Number(displayPayload.receivedTotal || 0)
+  summary.couponTotal = Number(displayPayload.couponTotal || 0)
+  summary.discountAmountTotal = Number(displayPayload.discountAmountTotal || 0)
+  summary.averageTicketValue = Number(displayPayload.averageTicketValue || 0)
+  summary.quantityTotal = Number(displayPayload.quantityTotal || 0)
+  summary.orderCount = Number(displayPayload.orderCount || 0)
+  summary.topSalespersonLabel = String(displayPayload.topSalespersonLabel || '今日个人销冠')
+  summary.topShopLabel = String(displayPayload.topShopLabel || '今日店铺销冠')
+  summary.topSalespersonName = String(displayPayload.topSalespersonName || '暂无')
+  summary.topShopName = String(displayPayload.topShopName || '暂无')
   summary.topSalesperson = {
-    name: String(payload.topSalesperson?.name || summary.topSalespersonName || '暂无'),
-    amount: Number(payload.topSalesperson?.amount || 0),
-    quantity: Number(payload.topSalesperson?.quantity || 0),
+    name: String(displayPayload.topSalesperson?.name || summary.topSalespersonName || '暂无'),
+    amount: Number(displayPayload.topSalesperson?.amount || 0),
+    quantity: Number(displayPayload.topSalesperson?.quantity || 0),
   }
   summary.topShop = {
-    name: String(payload.topShop?.name || summary.topShopName || '暂无'),
-    amount: Number(payload.topShop?.amount || 0),
-    quantity: Number(payload.topShop?.quantity || 0),
+    name: String(displayPayload.topShop?.name || summary.topShopName || '暂无'),
+    amount: Number(displayPayload.topShop?.amount || 0),
+    quantity: Number(displayPayload.topShop?.quantity || 0),
   }
   emit('loaded', {
-    ...payload,
-    period: payload.period,
+    ...displayPayload,
+    period: displayPayload.period,
     title: summary.title,
     receivableTotal: summary.receivableTotal,
     receivedTotal: summary.receivedTotal,

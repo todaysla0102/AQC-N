@@ -500,7 +500,10 @@
                       <strong>{{ item.title }}</strong>
                       <span v-if="item.badge">{{ item.badge }}</span>
                     </div>
-                    <p>{{ item.subtitle }}</p>
+                    <div v-if="item.subtitleRows?.length" class="global-search-item-subtitles">
+                      <p v-for="(subtitleRow, subtitleIndex) in item.subtitleRows" :key="subtitleIndex">{{ subtitleRow }}</p>
+                    </div>
+                    <p v-else>{{ item.subtitle }}</p>
                   </button>
                 </section>
               </div>
@@ -825,7 +828,7 @@ let notificationRefreshTimer = null
 let searchFocusRetryTimers = []
 let lastBrowserUnreadCount = 0
 
-const SEARCH_LIMIT = 5
+const SEARCH_LIMIT = 7
 const GLOBAL_SEARCH_Z_INDEX = 96000
 const localTestGlobalSearchEnabled = import.meta.env.VITE_LOCAL_TEST_LOGIN === 'true'
 const localTestGlobalSearchGoods = [
@@ -1519,6 +1522,50 @@ function buildGoodsTitle(item) {
     .join(' ') || normalizeSearchText(item?.name) || normalizeSearchText(item?.title) || '未命名商品'
 }
 
+function formatGlobalSearchPrice(value) {
+  const numericValue = Number(value || 0)
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return ''
+  }
+  return `¥ ${formatMoney(numericValue)}`
+}
+
+function formatGlobalSearchRecentSoldAt(value) {
+  const cleanValue = normalizeSearchText(value)
+  if (!cleanValue) {
+    return ''
+  }
+  const parsed = new Date(cleanValue)
+  if (Number.isNaN(parsed.getTime())) {
+    return cleanValue.replace('T', ' ').slice(0, 16)
+  }
+  return parsed.toLocaleString('zh-CN', {
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).replace(/\//g, '-')
+}
+
+function resolveLatestSearchSoldAt(currentValue, nextValue) {
+  const currentText = normalizeSearchText(currentValue)
+  const nextText = normalizeSearchText(nextValue)
+  if (!currentText) {
+    return nextText
+  }
+  if (!nextText) {
+    return currentText
+  }
+  const currentTime = new Date(currentText).getTime()
+  const nextTime = new Date(nextText).getTime()
+  if (Number.isNaN(currentTime) || Number.isNaN(nextTime)) {
+    return nextText > currentText ? nextText : currentText
+  }
+  return nextTime > currentTime ? nextText : currentText
+}
+
 function normalizeGlobalSearchGoodsCandidate(item, source) {
   if (!item) {
     return null
@@ -1536,6 +1583,8 @@ function normalizeGlobalSearchGoodsCandidate(item, source) {
     barcode: normalizeSearchText(isSalesSource ? item.goodsBarcode : item.barcode),
     price: Number(isSalesSource ? (item.unitPrice || 0) : (item.price || item.originalPrice || 0)),
     stock: isSalesSource ? undefined : Number(item.stock ?? 0),
+    salesCount: Number(isSalesSource ? 0 : (item.salesCount ?? item.saleNum ?? 0)),
+    recentSoldAt: normalizeSearchText(isSalesSource ? item.soldAt : ''),
     orderNum: normalizeSearchText(item.orderNum),
     saleRecordId: isSalesSource ? Number(item.id || 0) || null : null,
     sourceSet: new Set([source]),
@@ -1566,6 +1615,8 @@ function mergeGlobalSearchGoodsCandidate(map, item, source) {
   existing.name ||= candidate.name
   existing.barcode ||= candidate.barcode
   existing.price ||= candidate.price
+  existing.salesCount = Math.max(Number(existing.salesCount || 0), Number(candidate.salesCount || 0))
+  existing.recentSoldAt = resolveLatestSearchSoldAt(existing.recentSoldAt, candidate.recentSoldAt)
   if ((existing.stock === undefined || existing.stock === null) && candidate.stock !== undefined) {
     existing.stock = candidate.stock
   }
@@ -1578,18 +1629,25 @@ function buildGlobalSearchGoodsResults(goodsRows = [], distributionRows = [], sa
   distributionRows.forEach((item) => mergeGlobalSearchGoodsCandidate(map, item, '库存分布'))
   goodsRows.forEach((item) => mergeGlobalSearchGoodsCandidate(map, item, '商品详情'))
   salesRows.forEach((item) => mergeGlobalSearchGoodsCandidate(map, item, '销售记录'))
-  return Array.from(map.values()).slice(0, SEARCH_LIMIT * 2).map((item) => {
+  return Array.from(map.values()).slice(0, SEARCH_LIMIT).map((item) => {
     const sourceLabel = Array.from(item.sourceSet).join(' / ')
+    const firstSubtitleRow = buildSearchSubtitle([
+      formatGlobalSearchPrice(item.price),
+      `总销量 ${Number(item.salesCount || 0)}`,
+    ])
+    const secondSubtitleRow = buildSearchSubtitle([
+      item.brand,
+      item.series,
+      formatGlobalSearchRecentSoldAt(item.recentSoldAt),
+    ])
     return {
       ...item,
       sourceLabel,
       key: `goods-action-${item.key}`,
+      title: item.model || item.name || item.title,
       badge: item.stock !== undefined && item.stock !== null ? `库存 ${item.stock}` : '',
-      subtitle: buildSearchSubtitle([
-        item.barcode ? `条码 ${item.barcode}` : '',
-        item.orderNum ? `最近订单 ${item.orderNum}` : '',
-        sourceLabel ? `匹配 ${sourceLabel}` : '',
-      ]),
+      subtitleRows: [firstSubtitleRow, secondSubtitleRow].filter(Boolean),
+      subtitle: [firstSubtitleRow, secondSubtitleRow].filter(Boolean).join(' · '),
       action: () => openGlobalSearchGoodsActionMenu(item),
     }
   })

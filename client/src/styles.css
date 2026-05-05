@@ -914,6 +914,13 @@
     color: var(--text-secondary);
   }
 
+  .mobile-work-order-card .mobile-sales-record-main strong {
+    font-size: 16px;
+    line-height: 1.35;
+    font-weight: 700;
+    letter-spacing: 0;
+  }
+
   .mobile-work-order-bottom-actions {
     margin-top: auto;
     display: grid;
@@ -2702,6 +2709,15 @@ img.theme-sensitive-logo {
   margin: 0;
   color: var(--text-secondary);
   line-height: 1.6;
+}
+
+.global-search-item-subtitles {
+  display: grid;
+  gap: 2px;
+}
+
+.global-search-item-subtitles p {
+  margin: 0;
 }
 
 .head-logout-btn:hover {

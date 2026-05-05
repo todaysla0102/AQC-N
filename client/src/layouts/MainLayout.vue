@@ -432,7 +432,7 @@
             v-model.trim="searchKeyword"
             type="text"
             class="global-search-input"
-            placeholder="搜索商品、订单、工单、店铺、库存分布"
+            placeholder="搜索商品、销售记录、订单、工单、店铺"
             inputmode="search"
             enterkeyhint="search"
             autocomplete="off"
@@ -509,6 +509,37 @@
         </div>
       </div>
     </el-dialog>
+
+    <ResponsiveDialog
+      v-model="searchGoodsActionMenuVisible"
+      :title="searchGoodsActionTitle"
+      width="min(420px, 92vw)"
+      :z-index="GLOBAL_SEARCH_Z_INDEX + 10"
+      :mobile-base-z-index="GLOBAL_SEARCH_Z_INDEX + 10"
+      class="aqc-app-dialog goods-distribution-action-dialog global-search-goods-action-dialog"
+      mobile-subtitle="全局搜索"
+      :initial-snap="0.48"
+      :expanded-snap="0.72"
+    >
+      <section class="work-order-category-chooser goods-distribution-action-chooser global-search-goods-action-chooser">
+        <button type="button" class="work-order-category-card goods-distribution-action-card" @click="openSearchGoodsDistribution">
+          <strong>库存分布</strong>
+          <small>{{ searchGoodsActionSubtitle }}</small>
+        </button>
+        <button type="button" class="work-order-category-card goods-distribution-action-card" @click="createOrderFromSearchGoods">
+          <strong>创建订单</strong>
+          <small>跳转录入销售并自动带入商品信息</small>
+        </button>
+        <button type="button" class="work-order-category-card goods-distribution-action-card" @click="openSearchGoodsDetail">
+          <strong>商品详情</strong>
+          <small>进入商品页并筛选出该商品</small>
+        </button>
+        <button type="button" class="work-order-category-card goods-distribution-action-card" @click="openSearchGoodsSalesRecords">
+          <strong>商品销售记录</strong>
+          <small>进入销售记录并筛选该商品</small>
+        </button>
+      </section>
+    </ResponsiveDialog>
 
     <ResponsiveDialog
       v-model="searchDistributionVisible"
@@ -663,7 +694,6 @@ import {
   OfficeBuilding,
   RefreshRight,
   Search,
-  Sell,
   Setting,
   ShoppingCart,
   Sunny,
@@ -765,6 +795,8 @@ const searchBodyHeight = ref(0)
 const searchResultVersion = ref(0)
 const searchResultGroups = ref([])
 const activeSearchKey = ref('')
+const searchGoodsActionMenuVisible = ref(false)
+const searchGoodsActionItem = ref(null)
 const searchDistributionVisible = ref(false)
 const searchDistributionLoading = ref(false)
 const searchDistributionItem = ref(null)
@@ -810,8 +842,6 @@ const themeOptions = [
 ]
 const searchTypeIcons = {
   goods: Box,
-  distribution: Box,
-  sales: Sell,
   orders: ShoppingCart,
   workOrders: Tickets,
   shops: OfficeBuilding,
@@ -991,6 +1021,18 @@ const searchDistributionActionSubtitle = computed(() => {
     return `已带入 ${goodsLabel} 与 ${sourceLabel}，调入点位可在工单中补选`
   }
   return `已带入 ${goodsLabel} 与 ${sourceLabel}`
+})
+const searchGoodsActionTitle = computed(() => (
+  buildGoodsTitle(searchGoodsActionItem.value) || '商品'
+))
+const searchGoodsActionSubtitle = computed(() => {
+  const item = searchGoodsActionItem.value || {}
+  const parts = [
+    item.barcode ? `条码 ${item.barcode}` : '',
+    item.stock !== undefined && item.stock !== null ? `总库存 ${item.stock}` : '',
+    item.sourceLabel ? `来自 ${item.sourceLabel}` : '',
+  ].filter(Boolean)
+  return parts.join(' · ') || '选择下一步操作'
 })
 
 const headerTitle = computed(() => {
@@ -1471,10 +1513,86 @@ function buildSearchSubtitle(parts) {
 }
 
 function buildGoodsTitle(item) {
-  return [item.brand, item.series, item.model]
+  return [item?.brand, item?.series, item?.model]
     .map((value) => normalizeSearchText(value))
     .filter(Boolean)
-    .join(' ') || normalizeSearchText(item.name) || '未命名商品'
+    .join(' ') || normalizeSearchText(item?.name) || normalizeSearchText(item?.title) || '未命名商品'
+}
+
+function normalizeGlobalSearchGoodsCandidate(item, source) {
+  if (!item) {
+    return null
+  }
+  const isSalesSource = source === '销售记录'
+  const id = Number(isSalesSource
+    ? (item.goodsId || item.goods_id || item.goodsItemId || item.itemId || 0)
+    : (item.id || item.goodsId || 0))
+  const candidate = {
+    id: Number.isFinite(id) && id > 0 ? id : null,
+    brand: normalizeSearchText(isSalesSource ? item.goodsBrand : item.brand),
+    series: normalizeSearchText(isSalesSource ? item.goodsSeries : item.series),
+    model: normalizeSearchText(isSalesSource ? (item.goodsModel || item.goodsDisplayName) : item.model),
+    name: normalizeSearchText(isSalesSource ? (item.goodsDisplayName || item.goodsName) : item.name),
+    barcode: normalizeSearchText(isSalesSource ? item.goodsBarcode : item.barcode),
+    price: Number(isSalesSource ? (item.unitPrice || 0) : (item.price || item.originalPrice || 0)),
+    stock: isSalesSource ? undefined : Number(item.stock ?? 0),
+    orderNum: normalizeSearchText(item.orderNum),
+    saleRecordId: isSalesSource ? Number(item.id || 0) || null : null,
+    sourceSet: new Set([source]),
+  }
+  const title = buildGoodsTitle(candidate)
+  if (!candidate.id && !normalizeSearchText(title)) {
+    return null
+  }
+  candidate.title = title
+  candidate.key = candidate.id ? `id-${candidate.id}` : `label-${[candidate.title, candidate.barcode].filter(Boolean).join('|').toLowerCase()}`
+  return candidate
+}
+
+function mergeGlobalSearchGoodsCandidate(map, item, source) {
+  const candidate = normalizeGlobalSearchGoodsCandidate(item, source)
+  if (!candidate) {
+    return
+  }
+  const existing = map.get(candidate.key)
+  if (!existing) {
+    map.set(candidate.key, candidate)
+    return
+  }
+  existing.sourceSet.add(source)
+  existing.brand ||= candidate.brand
+  existing.series ||= candidate.series
+  existing.model ||= candidate.model
+  existing.name ||= candidate.name
+  existing.barcode ||= candidate.barcode
+  existing.price ||= candidate.price
+  if ((existing.stock === undefined || existing.stock === null) && candidate.stock !== undefined) {
+    existing.stock = candidate.stock
+  }
+  existing.orderNum ||= candidate.orderNum
+  existing.saleRecordId ||= candidate.saleRecordId
+}
+
+function buildGlobalSearchGoodsResults(goodsRows = [], distributionRows = [], salesRows = []) {
+  const map = new Map()
+  distributionRows.forEach((item) => mergeGlobalSearchGoodsCandidate(map, item, '库存分布'))
+  goodsRows.forEach((item) => mergeGlobalSearchGoodsCandidate(map, item, '商品详情'))
+  salesRows.forEach((item) => mergeGlobalSearchGoodsCandidate(map, item, '销售记录'))
+  return Array.from(map.values()).slice(0, SEARCH_LIMIT * 2).map((item) => {
+    const sourceLabel = Array.from(item.sourceSet).join(' / ')
+    return {
+      ...item,
+      sourceLabel,
+      key: `goods-action-${item.key}`,
+      badge: item.stock !== undefined && item.stock !== null ? `库存 ${item.stock}` : '',
+      subtitle: buildSearchSubtitle([
+        item.barcode ? `条码 ${item.barcode}` : '',
+        item.orderNum ? `最近订单 ${item.orderNum}` : '',
+        sourceLabel ? `匹配 ${sourceLabel}` : '',
+      ]),
+      action: () => openGlobalSearchGoodsActionMenu(item),
+    }
+  })
 }
 
 function filterLocalGlobalSearchGoods(keywordValue) {
@@ -1727,6 +1845,77 @@ async function viewSearchDistributionInventoryLogs() {
   })
 }
 
+function openGlobalSearchGoodsActionMenu(item) {
+  searchGoodsActionItem.value = item || null
+  searchDistributionActionMenuVisible.value = false
+  searchGoodsActionMenuVisible.value = true
+}
+
+function resolveSearchGoodsActionId() {
+  const goodsId = Number(searchGoodsActionItem.value?.id || 0)
+  return Number.isFinite(goodsId) && goodsId > 0 ? goodsId : 0
+}
+
+async function openSearchGoodsDistribution() {
+  const goodsId = resolveSearchGoodsActionId()
+  if (!goodsId) {
+    ElMessage.warning('当前商品信息未准备完成')
+    return
+  }
+  const fallbackPayload = {
+    item: searchGoodsActionItem.value,
+    inventories: [],
+    totalStock: Number(searchGoodsActionItem.value?.stock || 0),
+  }
+  searchGoodsActionMenuVisible.value = false
+  await nextTick()
+  await openGlobalSearchDistribution(goodsId, fallbackPayload)
+}
+
+async function openSearchGoodsDetail() {
+  const goodsId = resolveSearchGoodsActionId()
+  if (!goodsId) {
+    ElMessage.warning('当前商品信息未准备完成')
+    return
+  }
+  searchGoodsActionMenuVisible.value = false
+  searchVisible.value = false
+  await router.push({ name: 'goods-manage', query: { spotlight_goods: String(goodsId) } })
+}
+
+async function openSearchGoodsSalesRecords() {
+  const goodsId = resolveSearchGoodsActionId()
+  const goodsLabel = buildGoodsTitle(searchGoodsActionItem.value)
+  if (!goodsId && !goodsLabel) {
+    ElMessage.warning('当前商品信息未准备完成')
+    return
+  }
+  searchGoodsActionMenuVisible.value = false
+  searchVisible.value = false
+  await router.push({
+    name: 'sales-records',
+    query: goodsId
+      ? { spotlight_goods_sales: String(goodsId), spotlight_goods_sales_label: goodsLabel }
+      : { spotlight_goods_sales_keyword: goodsLabel },
+  })
+}
+
+async function createOrderFromSearchGoods() {
+  const goodsId = resolveSearchGoodsActionId()
+  if (!goodsId) {
+    ElMessage.warning('当前商品信息未准备完成')
+    return
+  }
+  searchGoodsActionMenuVisible.value = false
+  searchVisible.value = false
+  await router.push({
+    name: 'sales-entry',
+    query: {
+      prefill_goods_id: String(goodsId),
+    },
+  })
+}
+
 function updateActiveSearchResult() {
   const firstKey = searchFlatResults.value[0]?.key || ''
   if (!searchFlatResults.value.some((item) => item.key === activeSearchKey.value)) {
@@ -1809,42 +1998,14 @@ async function runGlobalSearch(keywordValue) {
 
   const goodsRows = mergeGlobalSearchGoods(goodsPayload?.items || [], keyword)
   const distributionRows = Array.isArray(distributionPayload?.items) ? distributionPayload.items : []
+  const salesRows = Array.isArray(salesPayload?.records) ? salesPayload.records : []
+  const combinedGoodsRows = buildGlobalSearchGoodsResults(goodsRows, distributionRows, salesRows)
   const groups = [
-    buildSearchGroup(
-      'distribution',
-      '库存分布',
-      searchTypeIcons.distribution,
-      distributionRows.map((item) => ({
-        key: `distribution-${item.id}`,
-        title: buildGoodsTitle(item),
-        badge: `库存 ${item.stock ?? 0}`,
-        subtitle: buildSearchSubtitle([item.barcode ? `条码 ${item.barcode}` : '']),
-        action: () => openGlobalSearchDistribution(item.id),
-      })),
-    ),
     buildSearchGroup(
       'goods',
       '商品',
       searchTypeIcons.goods,
-      goodsRows.map((item) => ({
-        key: `goods-${item.id}`,
-        title: buildGoodsTitle(item),
-        badge: '',
-        subtitle: buildSearchSubtitle([item.barcode ? `条码 ${item.barcode}` : '', `总库存 ${item.stock ?? 0}`]),
-        to: { name: 'goods-manage', query: { spotlight_goods: String(item.id) } },
-      })),
-    ),
-    buildSearchGroup(
-      'sales',
-      '销售记录',
-      searchTypeIcons.sales,
-      (salesPayload?.records || []).map((item) => ({
-        key: `sales-${item.id}`,
-        title: item.goodsDisplayName || item.orderNum || '销售记录',
-        badge: item.orderNum ? `订单 ${item.orderNum}` : '',
-        subtitle: buildSearchSubtitle([item.shopName, item.salesperson, `¥ ${Number(item.amount || 0).toFixed(2)}`]),
-        to: { name: 'sales-records', query: { spotlight_sale_record: String(item.id) } },
-      })),
+      combinedGoodsRows,
     ),
     buildSearchGroup(
       'orders',

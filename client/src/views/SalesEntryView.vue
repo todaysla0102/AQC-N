@@ -955,6 +955,7 @@ const meta = reactive({
   indexOptions: [],
 })
 let mobileSearchDebounceTimer = null
+let applyingPrefillGoodsId = 0
 
 const channelOptions = ['门店', '小程序', '企业微信', '私域', '团购', '其他']
 
@@ -1595,6 +1596,67 @@ async function loadSelectedGoodsInventory(itemId) {
   selectedGoodsTotalStock.value = Number(payload.totalStock || 0)
 }
 
+async function fetchGoodsItemForPrefill(itemId) {
+  const numericId = Number(itemId || 0)
+  if (!numericId) {
+    return null
+  }
+  const mockItem = localTestMockGoods.find((item) => Number(item.id) === numericId)
+  if (mockItem) {
+    return mockItem
+  }
+  const payload = await apiGet(`/goods/items/${numericId}`, {
+    token: authStore.token,
+    timeoutMs: 12000,
+  })
+  if (!payload?.success || !payload.item) {
+    ElMessage.error(payload?.message || '商品信息加载失败')
+    return null
+  }
+  return payload.item
+}
+
+async function consumeSalesEntryPrefillQuery() {
+  const nextQuery = { ...route.query }
+  if (!('prefill_goods_id' in nextQuery)) {
+    return
+  }
+  delete nextQuery.prefill_goods_id
+  await router.replace({ query: nextQuery })
+}
+
+async function applySalesEntryPrefillFromRoute() {
+  if (isRepairMode.value) {
+    return
+  }
+  const goodsId = Number(route.query.prefill_goods_id || 0)
+  if (!goodsId || applyingPrefillGoodsId === goodsId) {
+    return
+  }
+  applyingPrefillGoodsId = goodsId
+  try {
+    const item = await fetchGoodsItemForPrefill(goodsId)
+    if (!item) {
+      await consumeSalesEntryPrefillQuery()
+      return
+    }
+    selectGoods(item)
+    hasSearchedSuggestions.value = false
+    mobileSearchExpanded.value = false
+    suggestions.value = []
+    if (showMobileSalesEntryFlow.value) {
+      mobileScannerSheetVisible.value = false
+      mobileProductSheetVisible.value = false
+      mobileStep.value = 2
+      await stopScanner()
+    }
+    ElMessage.success('已带入商品信息')
+    await consumeSalesEntryPrefillQuery()
+  } finally {
+    applyingPrefillGoodsId = 0
+  }
+}
+
 async function searchSuggestions() {
   hasSearchedSuggestions.value = true
   await Promise.all([loadMeta(), loadSuggestions()])
@@ -2225,6 +2287,7 @@ onMounted(() => {
     if (!isRepairMode.value && String(route.query.scan || '').trim() === '1') {
       await openScannerDialog()
     }
+    await applySalesEntryPrefillFromRoute()
   })()
 })
 
@@ -2241,6 +2304,13 @@ watch(
       return
     }
     void loadSelectedGoodsInventory(nextGoodsId)
+  },
+)
+
+watch(
+  () => route.query.prefill_goods_id,
+  () => {
+    void applySalesEntryPrefillFromRoute()
   },
 )
 

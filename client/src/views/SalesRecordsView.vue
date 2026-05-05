@@ -1004,6 +1004,7 @@ const page = ref(1)
 const pageSize = ref(20)
 const keyword = ref('')
 const recordIdFilter = ref('')
+const goodsIdFilter = ref('')
 const orderNumFilter = ref('')
 const brandFilter = ref('')
 const seriesFilter = ref('')
@@ -1237,6 +1238,7 @@ const activeRecommendedPeriod = computed(() => {
 
 const summaryQuery = computed(() => ({
   sale_kind: isRepairMode.value ? 'repair' : 'goods',
+  ...(goodsIdFilter.value ? { goods_id: goodsIdFilter.value } : {}),
   ...(keyword.value ? { q: keyword.value } : {}),
   ...(orderNumFilter.value ? { order_num: orderNumFilter.value } : {}),
   ...(brandFilter.value ? { brand: brandFilter.value } : {}),
@@ -2197,6 +2199,7 @@ function buildFilterQuery() {
   return {
     sale_kind: isRepairMode.value ? 'repair' : 'goods',
     ...(recordIdFilter.value ? { record_id: recordIdFilter.value } : {}),
+    ...(goodsIdFilter.value ? { goods_id: goodsIdFilter.value } : {}),
     ...(keyword.value ? { q: keyword.value } : {}),
     ...(orderNumFilter.value ? { order_num: orderNumFilter.value } : {}),
     ...(brandFilter.value ? { brand: brandFilter.value } : {}),
@@ -2535,6 +2538,7 @@ function onCalendarScopeChange(event) {
 
 function onResetFilters() {
   recordIdFilter.value = ''
+  goodsIdFilter.value = ''
   keyword.value = ''
   orderNumFilter.value = ''
   brandFilter.value = ''
@@ -2775,12 +2779,16 @@ async function consumeSpotlightQuery(keys) {
 async function applySalesSpotlightFromRoute() {
   const spotlightRecordId = String(route.query.spotlight_sale_record || '').trim()
   const spotlightOrderNum = String(route.query.spotlight_order_num || '').trim()
-  if (!spotlightRecordId && !spotlightOrderNum) {
+  const spotlightGoodsSalesId = String(route.query.spotlight_goods_sales || '').trim()
+  const spotlightGoodsSalesKeyword = String(route.query.spotlight_goods_sales_keyword || '').trim()
+  const spotlightGoodsSalesLabel = String(route.query.spotlight_goods_sales_label || '').trim()
+  if (!spotlightRecordId && !spotlightOrderNum && !spotlightGoodsSalesId && !spotlightGoodsSalesKeyword) {
     return
   }
 
   recordIdFilter.value = spotlightRecordId
-  keyword.value = ''
+  goodsIdFilter.value = spotlightGoodsSalesId
+  keyword.value = spotlightGoodsSalesKeyword || ''
   orderNumFilter.value = spotlightRecordId ? '' : spotlightOrderNum
   brandFilter.value = ''
   seriesFilter.value = ''
@@ -2795,7 +2803,10 @@ async function applySalesSpotlightFromRoute() {
 
   await reloadAll()
   scrollRecordsIntoView()
-  await consumeSpotlightQuery(['spotlight_sale_record', 'spotlight_order_num'])
+  if (spotlightGoodsSalesId || spotlightGoodsSalesKeyword) {
+    ElMessage.success(`已筛选商品销售记录：${spotlightGoodsSalesLabel || spotlightGoodsSalesKeyword || spotlightGoodsSalesId}`)
+  }
+  await consumeSpotlightQuery(['spotlight_sale_record', 'spotlight_order_num', 'spotlight_goods_sales', 'spotlight_goods_sales_label', 'spotlight_goods_sales_keyword'])
 }
 
 async function applyAccountFiltersFromRoute() {
@@ -2807,6 +2818,7 @@ async function applyAccountFiltersFromRoute() {
   }
 
   recordIdFilter.value = ''
+  goodsIdFilter.value = ''
   keyword.value = ''
   orderNumFilter.value = ''
   brandFilter.value = ''
@@ -2839,13 +2851,21 @@ watch([keyword, orderNumFilter], () => {
 })
 
 watch(
-  () => [route.query.spotlight_sale_record, route.query.spotlight_order_num, route.query.account_salesperson, route.query.account_date_from, route.query.account_date_to],
-  ([recordId, orderNum, accountSalesperson, accountDateFrom, accountDateTo]) => {
+  () => [
+    route.query.spotlight_sale_record,
+    route.query.spotlight_order_num,
+    route.query.spotlight_goods_sales,
+    route.query.spotlight_goods_sales_keyword,
+    route.query.account_salesperson,
+    route.query.account_date_from,
+    route.query.account_date_to,
+  ],
+  ([recordId, orderNum, goodsSalesId, goodsSalesKeyword, accountSalesperson, accountDateFrom, accountDateTo]) => {
     if (accountSalesperson || accountDateFrom || accountDateTo) {
       void applyAccountFiltersFromRoute()
       return
     }
-    if (!recordId && !orderNum) {
+    if (!recordId && !orderNum && !goodsSalesId && !goodsSalesKeyword) {
       return
     }
     void applySalesSpotlightFromRoute()

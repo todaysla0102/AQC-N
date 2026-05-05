@@ -352,6 +352,7 @@ def _build_sale_conditions(
     *,
     sale_kind: str | None = SALE_KIND_GOODS,
     record_id: int | None = None,
+    goods_id: int | None = None,
     keyword: str = "",
     order_num: str | None = None,
     brand: str | None = None,
@@ -371,6 +372,8 @@ def _build_sale_conditions(
 
     if record_id is not None:
         conditions.append(AqcSaleRecord.id == int(record_id))
+    if goods_id is not None:
+        conditions.append(AqcSaleRecord.goods_id == int(goods_id))
 
     clean_keyword = keyword.strip()
     if clean_keyword:
@@ -1617,6 +1620,7 @@ def update_sale_record(
 def sale_record_meta(
     sale_kind: str = Query(default=SALE_KIND_GOODS),
     record_id: int | None = Query(default=None, ge=1),
+    goods_id: int | None = Query(default=None, ge=1),
     q: str | None = None,
     order_num: str | None = None,
     brand: str | None = None,
@@ -1636,6 +1640,7 @@ def sale_record_meta(
         db,
         sale_kind=sale_kind,
         record_id=record_id,
+        goods_id=goods_id,
         keyword=q or "",
         order_num=order_num,
         brand=brand,
@@ -1654,6 +1659,7 @@ def sale_record_meta(
         db,
         sale_kind=sale_kind,
         record_id=record_id,
+        goods_id=goods_id,
         keyword=q or "",
         order_num=order_num,
         brand=brand,
@@ -1718,6 +1724,7 @@ def list_sale_records(
     page_size: int = Query(default=20, ge=1, le=200),
     sale_kind: str = Query(default=SALE_KIND_GOODS),
     record_id: int | None = Query(default=None, ge=1),
+    goods_id: int | None = Query(default=None, ge=1),
     q: str | None = None,
     order_num: str | None = None,
     brand: str | None = None,
@@ -1740,6 +1747,7 @@ def list_sale_records(
         db,
         sale_kind=sale_kind,
         record_id=record_id,
+        goods_id=goods_id,
         keyword=q or "",
         order_num=order_num,
         brand=brand,
@@ -1822,6 +1830,7 @@ def sales_summary(
     sale_kind: str = Query(default=SALE_KIND_GOODS),
     compare_mode: str = Query(default="period_total"),
     record_id: int | None = Query(default=None, ge=1),
+    goods_id: int | None = Query(default=None, ge=1),
     q: str | None = None,
     order_num: str | None = None,
     brand: str | None = None,
@@ -1841,6 +1850,7 @@ def sales_summary(
         db,
         sale_kind=sale_kind,
         record_id=record_id,
+        goods_id=goods_id,
         keyword=q or "",
         order_num=order_num,
         brand=brand,
@@ -2088,6 +2098,7 @@ def sales_calendar(
     month: str | None = None,
     sale_kind: str = Query(default=SALE_KIND_GOODS),
     record_id: int | None = Query(default=None, ge=1),
+    goods_id: int | None = Query(default=None, ge=1),
     q: str | None = None,
     order_num: str | None = None,
     brand: str | None = None,
@@ -2111,6 +2122,7 @@ def sales_calendar(
         db,
         sale_kind=sale_kind,
         record_id=record_id,
+        goods_id=goods_id,
         keyword=q or "",
         order_num=order_num,
         brand=brand,

@@ -91,6 +91,10 @@
   display: none;
 }
 
+.mobile-work-order-list {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .sales-entry-page.sales-workbench,
   .sales-records-workbench {
@@ -725,6 +729,424 @@
     font-size: 18px;
     line-height: 1.2;
     overflow-wrap: anywhere;
+  }
+
+  .work-order-page--mobile-flow {
+    display: block;
+    min-height: 100%;
+  }
+
+  .mobile-work-order-flow {
+    min-height: calc(100vh - 64px);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-primary);
+  }
+
+  .mobile-work-order-step-panel {
+    flex: 1;
+    min-height: 0;
+    background: var(--bg-primary);
+  }
+
+  .mobile-work-order-choice-grid,
+  .mobile-work-order-type-list,
+  .mobile-work-order-form,
+  .mobile-work-order-item-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .mobile-work-order-choice {
+    min-height: 78px;
+    position: relative;
+  }
+
+  .mobile-work-order-choice.active,
+  .mobile-work-order-type-card.active {
+    border-color: color-mix(in srgb, var(--accent-color) 46%, var(--border-color));
+    background: color-mix(in srgb, var(--highlight-bg) 76%, var(--field-bg));
+  }
+
+  .mobile-work-order-selected-mark {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    color: var(--button-primary-text);
+    background: var(--accent-color);
+    font-size: 13px;
+    font-weight: 900;
+    box-shadow: 0 8px 18px rgba(17, 17, 17, 0.12);
+  }
+
+  .mobile-work-order-choice.active .mobile-work-order-selected-mark {
+    display: inline-flex;
+  }
+
+  .mobile-work-order-type-card {
+    appearance: none;
+    width: 100%;
+    min-height: 78px;
+    padding: 15px;
+    border: 1px solid var(--border-light);
+    border-radius: 18px;
+    background: color-mix(in srgb, var(--bg-elevated) 90%, var(--field-bg));
+    color: var(--text-primary);
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+    text-align: left;
+    box-shadow: var(--shadow-xs);
+  }
+
+  .mobile-work-order-type-card span {
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-color);
+    background: color-mix(in srgb, var(--accent-color) 12%, var(--field-bg));
+    font-family: 'Manrope', 'Noto Sans SC', sans-serif;
+    font-size: 12px;
+    font-weight: 900;
+  }
+
+  .mobile-work-order-type-card strong {
+    font-size: 20px;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  .mobile-work-order-form-card {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--border-light);
+    border-radius: 20px;
+    background: color-mix(in srgb, var(--card-bg) 94%, var(--field-bg));
+    box-shadow: var(--shadow-xs);
+  }
+
+  .mobile-work-order-form-card .sales-filter-field {
+    display: grid;
+    gap: 7px;
+  }
+
+  .mobile-work-order-switch-field {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .mobile-work-order-add-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .mobile-work-order-add-actions .el-button {
+    width: 100%;
+    min-height: 48px;
+    margin-left: 0 !important;
+    border-radius: 16px;
+  }
+
+  .mobile-work-order-add-actions-single {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mobile-work-order-detail-group {
+    display: grid;
+    gap: 10px;
+    padding: 12px 0;
+  }
+
+  .mobile-work-order-detail-group + .mobile-work-order-detail-group {
+    border-top: 1px solid var(--border-light);
+  }
+
+  .mobile-work-order-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 28px;
+  }
+
+  .mobile-work-order-section-head strong {
+    font-size: 16px;
+    line-height: 1.25;
+  }
+
+  .mobile-work-order-item-list {
+    overflow: visible;
+    padding-bottom: 8px;
+    background: transparent;
+  }
+
+  .mobile-work-order-detail-step {
+    overflow-y: auto;
+  }
+
+  .mobile-work-order-item-card {
+    position: relative;
+    display: block;
+    min-height: 0;
+  }
+
+  .mobile-work-order-card,
+  .mobile-work-order-item-card {
+    padding: 14px 15px;
+    text-align: left;
+  }
+
+  .mobile-work-order-card p,
+  .mobile-work-order-item-card p {
+    color: var(--text-secondary);
+  }
+
+  .mobile-work-order-bottom-actions {
+    margin-top: auto;
+    display: grid;
+    gap: 10px;
+    padding-top: 10px;
+  }
+
+  .mobile-work-order-submit-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    position: sticky;
+    bottom: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: linear-gradient(to top, var(--bg-primary) 74%, transparent);
+  }
+
+  .mobile-work-order-submit-actions .el-button {
+    min-height: 54px;
+    margin-left: 0 !important;
+    border-radius: 18px;
+  }
+
+  .mobile-work-order-list {
+    display: grid !important;
+    gap: 10px;
+  }
+
+  .work-order-table-card > .table-shell {
+    display: none !important;
+  }
+
+  .work-order-table-card {
+    padding: 12px !important;
+    border: 1px solid var(--border-light) !important;
+    border-radius: var(--border-radius) !important;
+    background: var(--card-bg) !important;
+    box-shadow: var(--shadow-xs) !important;
+  }
+
+  .work-order-table-topbar {
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .work-order-scope-row-large,
+  .work-order-tab-row {
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+  }
+
+  .work-order-approval-strip-inline {
+    width: 100%;
+  }
+
+  .work-order-approval-strip-inline .work-order-chip-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .work-order-approval-strip-inline .work-order-approval-chip {
+    width: 100% !important;
+    min-height: 78px;
+  }
+
+  .work-order-tab,
+  .work-order-tab-large {
+    width: auto !important;
+    min-width: 0 !important;
+    min-height: 40px !important;
+    padding: 8px 4px !important;
+    border-radius: 14px !important;
+    justify-content: center !important;
+    gap: 4px !important;
+    font-size: 12px !important;
+  }
+
+  .work-order-tab span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .work-order-tab small,
+  .work-order-tab-large small {
+    min-width: 18px !important;
+    height: 18px !important;
+    font-size: 10px !important;
+  }
+
+  .mobile-work-order-action-menu {
+    grid-template-columns: 1fr;
+  }
+
+  .mobile-work-order-entry-sheet,
+  .mobile-work-order-edit-form {
+    display: grid;
+    gap: 12px;
+  }
+
+  .mobile-work-order-order-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding: 0 0 2px;
+  }
+
+  .mobile-work-order-order-date-filter {
+    grid-column: 1 / -1;
+  }
+
+  .mobile-work-order-item-detail-sheet {
+    display: grid;
+    gap: 8px;
+    max-height: none;
+    overflow: auto;
+    padding-bottom: 4px;
+  }
+
+  .mobile-work-order-detail-row {
+    display: grid;
+    grid-template-columns: 104px minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+    padding: 11px 12px;
+    border: 1px solid var(--border-light);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--bg-elevated) 88%, var(--field-bg));
+  }
+
+  .mobile-work-order-detail-row span,
+  .mobile-work-order-form-field > span {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .mobile-work-order-detail-row strong {
+    min-width: 0;
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.35;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+
+  .mobile-work-order-edit-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .mobile-work-order-form-field {
+    display: grid;
+    gap: 7px;
+    min-width: 0;
+  }
+
+  .mobile-work-order-long-input,
+  .mobile-work-order-long-control {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .mobile-work-order-long-input .el-input__wrapper,
+  .mobile-work-order-long-control .el-input__wrapper,
+  .mobile-work-order-long-control .el-select__wrapper {
+    min-height: 46px;
+    border-radius: 14px;
+    box-shadow: inset 0 0 0 1px var(--border-light);
+  }
+
+  .mobile-work-order-long-input .el-input__inner,
+  .mobile-work-order-long-control .el-input__inner {
+    font-size: 15px !important;
+    font-weight: 700;
+    text-align: left;
+  }
+
+  .mobile-work-order-search-area {
+    opacity: 1;
+    max-height: none;
+    overflow: visible;
+    transform: none;
+  }
+
+  .mobile-work-order-confirm-card {
+    display: grid;
+    gap: 14px;
+    padding: 14px;
+    border: 1px solid var(--border-light);
+    border-radius: 18px;
+    background: color-mix(in srgb, var(--card-bg) 92%, var(--bg-primary));
+  }
+
+  .mobile-work-order-quantity-field {
+    width: 100%;
+  }
+
+  .mobile-work-order-stock-grid article strong {
+    font-size: 20px;
+  }
+
+  .mobile-work-order-order-list {
+    max-height: 58vh;
+    overflow: auto;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .mobile-work-order-step-next-enter-active,
+  .mobile-work-order-step-next-leave-active,
+  .mobile-work-order-step-prev-enter-active,
+  .mobile-work-order-step-prev-leave-active {
+    transition: opacity 0.34s ease, transform 0.34s cubic-bezier(0.16, 1, 0.3, 1), filter 0.34s ease;
+  }
+
+  .mobile-work-order-step-next-enter-from,
+  .mobile-work-order-step-prev-leave-to {
+    opacity: 0;
+    transform: translateX(22px);
+    filter: blur(6px);
+  }
+
+  .mobile-work-order-step-next-leave-to,
+  .mobile-work-order-step-prev-enter-from {
+    opacity: 0;
+    transform: translateX(-22px);
+    filter: blur(6px);
+  }
+
+  .sales-record-table .mobile-sales-record-main > strong {
+    font-size: 17px;
+    line-height: 1.25;
   }
 }
 

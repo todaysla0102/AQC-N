@@ -200,8 +200,18 @@
     </section>
 
     <div class="sales-records-overview-mobile">
-      <div class="dashboard-card-viewport">
-        <div class="dashboard-card-track" :class="{ 'show-calendar': recordsOverviewCard === 'calendar' }">
+      <div
+        class="dashboard-card-viewport"
+        @touchstart.passive="onRecordsOverviewTouchStart"
+        @touchmove="onRecordsOverviewTouchMove"
+        @touchend="onRecordsOverviewTouchEnd"
+        @touchcancel="resetRecordsOverviewSwipe"
+      >
+        <div
+          class="dashboard-card-track"
+          :class="{ 'show-calendar': recordsOverviewCard === 'calendar', 'is-dragging': recordsOverviewSwipeActive }"
+          :style="recordsOverviewCardTrackStyle"
+        >
           <div class="dashboard-card-slide" :class="{ active: recordsOverviewCard === 'sales' }" :aria-hidden="recordsOverviewCard !== 'sales'">
             <SalesSummaryPanel
               ref="summaryPanelRef"
@@ -1004,6 +1014,9 @@ const sortField = ref('sold_at')
 const sortOrder = ref('desc')
 const records = ref([])
 const recordsOverviewCard = ref('sales')
+const recordsOverviewSwipeActive = ref(false)
+const recordsOverviewSwipeDeltaX = ref(0)
+const recordsOverviewSwipeStart = reactive({ x: 0, y: 0 })
 const calendarMonth = ref(getCurrentMonthToken())
 const calendarTransitionName = ref('calendar-slide-next')
 const calendarPickerVisible = ref(false)
@@ -1053,6 +1066,9 @@ const actionColumnWidth = computed(() => resolveTableActionWidth([[
 }))
 const pagerLayout = computed(() => (isMobileViewport.value ? 'prev, pager, next' : 'total, prev, pager, next, sizes'))
 const recordsSectionRef = ref(null)
+const recordsOverviewCardTrackStyle = computed(() => ({
+  '--dashboard-swipe-offset': `${recordsOverviewSwipeDeltaX.value}px`,
+}))
 const summaryPanelRef = ref(null)
 let searchDebounceTimer = null
 let autoRefreshTimer = null
@@ -1353,6 +1369,62 @@ function switchRecordsOverviewCard(card) {
   recordsOverviewCard.value = card === 'calendar' ? 'calendar' : 'sales'
 }
 
+function resetRecordsOverviewSwipe() {
+  recordsOverviewSwipeActive.value = false
+  recordsOverviewSwipeDeltaX.value = 0
+  recordsOverviewSwipeStart.x = 0
+  recordsOverviewSwipeStart.y = 0
+}
+
+function onRecordsOverviewTouchStart(event) {
+  const touch = event.touches?.[0]
+  if (!touch) {
+    return
+  }
+  recordsOverviewSwipeActive.value = true
+  recordsOverviewSwipeDeltaX.value = 0
+  recordsOverviewSwipeStart.x = touch.clientX
+  recordsOverviewSwipeStart.y = touch.clientY
+}
+
+function onRecordsOverviewTouchMove(event) {
+  if (!recordsOverviewSwipeActive.value) {
+    return
+  }
+  const touch = event.touches?.[0]
+  if (!touch) {
+    return
+  }
+  const deltaX = touch.clientX - recordsOverviewSwipeStart.x
+  const deltaY = touch.clientY - recordsOverviewSwipeStart.y
+  if (Math.abs(deltaX) < 10 || Math.abs(deltaX) < Math.abs(deltaY) * 1.18) {
+    return
+  }
+  event.preventDefault?.()
+  const canSwipeToCalendar = recordsOverviewCard.value === 'sales' && deltaX < 0
+  const canSwipeToSales = recordsOverviewCard.value === 'calendar' && deltaX > 0
+  if (!canSwipeToCalendar && !canSwipeToSales) {
+    recordsOverviewSwipeDeltaX.value = Math.max(-28, Math.min(28, deltaX * 0.18))
+    return
+  }
+  recordsOverviewSwipeDeltaX.value = Math.max(-140, Math.min(140, deltaX))
+}
+
+function onRecordsOverviewTouchEnd(event) {
+  if (!recordsOverviewSwipeActive.value) {
+    return
+  }
+  const touch = event.changedTouches?.[0]
+  const deltaX = touch ? touch.clientX - recordsOverviewSwipeStart.x : recordsOverviewSwipeDeltaX.value
+  const deltaY = touch ? touch.clientY - recordsOverviewSwipeStart.y : 0
+  const isHorizontalSwipe = Math.abs(deltaX) >= 54 && Math.abs(deltaX) > Math.abs(deltaY) * 1.18
+  const nextTarget = deltaX < 0 ? 'calendar' : 'sales'
+  resetRecordsOverviewSwipe()
+  if (isHorizontalSwipe) {
+    switchRecordsOverviewCard(nextTarget)
+  }
+}
+
 function onSalesCalendarCardScopeChange(value) {
   shopFilter.value = String(value || '')
   page.value = 1
@@ -1556,8 +1628,47 @@ function openMobileRecordDetail() {
   mobileRecordDetailVisible.value = true
 }
 
+function resolveSalesRecordGoodsId(row) {
+  return Number(row?.goodsId || row?.goodsItemId || row?.goods_id || row?.itemId || 0) || null
+}
+
+function buildSalesRecordDistributionFallback(row) {
+  if (!row) {
+    return null
+  }
+  const goodsId = resolveSalesRecordGoodsId(row)
+  const quantity = Math.max(Number(row.quantity || 0), 0)
+  const unitPrice = Number(row.unitPrice || 0)
+  const locationName = row.shipShopName || row.shopName || ''
+  const inventories = locationName
+    ? [{
+      shopId: Number(row.shipShopId || row.shopId || 0) || -1,
+      shopName: locationName,
+      shopType: Number(row.shipShopType ?? SHOP_TYPE_STORE),
+      quantity,
+    }]
+    : []
+  return {
+    success: true,
+    item: {
+      id: goodsId,
+      brand: row.goodsBrand || '',
+      series: row.goodsSeries || '',
+      model: row.goodsModel || row.goodsDisplayName || row.goodsName || '',
+      name: row.goodsModel || row.goodsDisplayName || row.goodsName || '',
+      barcode: row.goodsBarcode || '',
+      price: unitPrice,
+    },
+    inventories,
+    totalStock: inventories.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
+  }
+}
+
 function canOpenMobileDistribution(row) {
-  return !isRepairMode.value && Number(row?.goodsId || 0) > 0
+  return !isRepairMode.value && Boolean(
+    resolveSalesRecordGoodsId(row)
+    || String(row?.goodsModel || row?.goodsDisplayName || row?.goodsName || '').trim()
+  )
 }
 
 async function openMobileRecordDistribution() {
@@ -1567,36 +1678,12 @@ async function openMobileRecordDistribution() {
     return
   }
   mobileRecordActionVisible.value = false
-  mobileDistributionVisible.value = true
-  mobileDistributionLoading.value = true
-  const payload = await apiGet(`/goods/items/${Number(row.goodsId)}/inventory`, {
-    token: authStore.token,
-    timeoutMs: 12000,
-  })
-  mobileDistributionLoading.value = false
-  if (!payload?.success) {
-    mobileDistributionItem.value = null
-    mobileDistributionRows.value = []
-    mobileDistributionTotalStock.value = 0
-    ElMessage.error(payload?.message || '商品分布加载失败')
-    return
-  }
-  const unitPrice = Number(payload.item?.price || row.unitPrice || 0)
-  mobileDistributionItem.value = payload.item || {
-    model: row.goodsModel,
-    brand: row.goodsBrand,
-    series: row.goodsSeries,
-  }
-  mobileDistributionTotalStock.value = Number(payload.totalStock || 0)
-  mobileDistributionRows.value = (payload.inventories || []).map((item) => {
-    const quantity = Number(item.quantity || 0)
-    return {
-      ...item,
-      quantity,
-      unitPrice,
-      lineAmount: Number((quantity * unitPrice).toFixed(2)),
-    }
-  })
+  window.dispatchEvent(new CustomEvent('aqc:open-goods-distribution', {
+    detail: {
+      itemId: resolveSalesRecordGoodsId(row),
+      fallbackPayload: buildSalesRecordDistributionFallback(row),
+    },
+  }))
 }
 
 async function editMobileRecord() {

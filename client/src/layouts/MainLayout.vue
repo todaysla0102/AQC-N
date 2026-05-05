@@ -795,6 +795,14 @@ let lastBrowserUnreadCount = 0
 
 const SEARCH_LIMIT = 5
 const GLOBAL_SEARCH_Z_INDEX = 96000
+const localTestGlobalSearchEnabled = import.meta.env.VITE_LOCAL_TEST_LOGIN === 'true'
+const localTestGlobalSearchGoods = [
+  { id: -901, brand: 'CASIO', series: 'G-SHOCK', model: 'GM-2100-1A', barcode: 'MOCK-GM2100', price: 1490, stock: 18 },
+  { id: -902, brand: 'CASIO', series: 'BABY-G', model: 'BA-110X-7A', barcode: 'MOCK-BA110', price: 990, stock: 12 },
+  { id: -903, brand: 'CASIO', series: 'EDIFICE', model: 'ECB-2000DC-1A', barcode: 'MOCK-ECB2000', price: 1890, stock: 11 },
+  { id: -904, brand: 'CASIO', series: 'PRO TREK', model: 'PRW-61Y-3', barcode: 'MOCK-PRW61', price: 2690, stock: 10 },
+  { id: -905, brand: 'CASIO', series: 'OCEANUS', model: 'OCW-T200S-1A', barcode: 'MOCK-OCWT200', price: 3990, stock: 5 },
+]
 const themeOptions = [
   { value: 'light', label: '浅色', icon: Sunny },
   { value: 'dark', label: '深色', icon: Moon },
@@ -1469,6 +1477,60 @@ function buildGoodsTitle(item) {
     .join(' ') || normalizeSearchText(item.name) || '未命名商品'
 }
 
+function filterLocalGlobalSearchGoods(keywordValue) {
+  if (!localTestGlobalSearchEnabled) {
+    return []
+  }
+  const keyword = normalizeSearchText(keywordValue).toLowerCase()
+  if (!keyword) {
+    return []
+  }
+  return localTestGlobalSearchGoods.filter((item) => (
+    [item.brand, item.series, item.model, item.barcode]
+      .map((value) => normalizeSearchText(value).toLowerCase())
+      .join(' ')
+      .includes(keyword)
+  ))
+}
+
+function mergeGlobalSearchGoods(apiRows = [], keywordValue = '') {
+  const rows = Array.isArray(apiRows) ? [...apiRows] : []
+  if (!localTestGlobalSearchEnabled) {
+    return rows
+  }
+  const seen = new Set(rows.map((item) => String(item?.id ?? '')).filter(Boolean))
+  filterLocalGlobalSearchGoods(keywordValue).forEach((item) => {
+    const key = String(item.id)
+    if (!seen.has(key)) {
+      rows.push(item)
+      seen.add(key)
+    }
+  })
+  return rows.slice(0, SEARCH_LIMIT)
+}
+
+function buildLocalGlobalSearchDistributionPayload(itemId) {
+  if (!localTestGlobalSearchEnabled) {
+    return null
+  }
+  const item = localTestGlobalSearchGoods.find((row) => Number(row.id || 0) === Number(itemId || 0))
+  if (!item) {
+    return null
+  }
+  const totalStock = Number(item.stock || 0)
+  const inventories = [
+    { shopId: 9001, shopName: '移动端测试店', shopType: 0, quantity: Math.max(totalStock - 7, 0) },
+    { shopId: 9002, shopName: '梦时代', shopType: 0, quantity: Math.min(4, totalStock) },
+    { shopId: 9101, shopName: '中心仓', shopType: SHOP_TYPE_WAREHOUSE, quantity: Math.min(3, totalStock) },
+  ].filter((row) => Number(row.quantity || 0) > 0)
+  return {
+    success: true,
+    item,
+    inventories,
+    totalStock: inventories.reduce((sum, row) => sum + Number(row.quantity || 0), 0),
+  }
+}
+
 const globalSearchMoneyFormatter = new Intl.NumberFormat('zh-CN', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
@@ -1511,9 +1573,13 @@ function searchDistributionTableSummary({ columns, data }) {
   })
 }
 
-async function openGlobalSearchDistribution(itemId) {
+function hasUsableSearchDistributionFallback(payload) {
+  return Boolean(payload?.item || (Array.isArray(payload?.inventories) && payload.inventories.length))
+}
+
+async function openGlobalSearchDistribution(itemId, fallbackPayload = null) {
   const normalizedId = Number(itemId || 0)
-  if (!normalizedId) {
+  if (!normalizedId && !hasUsableSearchDistributionFallback(fallbackPayload)) {
     ElMessage.warning('当前商品信息未准备完成')
     return
   }
@@ -1521,12 +1587,28 @@ async function openGlobalSearchDistribution(itemId) {
   searchDistributionActionRow.value = null
   searchDistributionVisible.value = true
   searchDistributionLoading.value = true
+  const localPayload = buildLocalGlobalSearchDistributionPayload(normalizedId)
+  if (localPayload) {
+    searchDistributionLoading.value = false
+    primeSearchDistributionState(localPayload)
+    return
+  }
+  if (!normalizedId) {
+    searchDistributionLoading.value = false
+    primeSearchDistributionState(fallbackPayload)
+    return
+  }
   const payload = await apiGet(`/goods/items/${normalizedId}/inventory`, {
     token: authStore.token,
     timeoutMs: 12000,
   })
   searchDistributionLoading.value = false
   if (!payload?.success) {
+    if (hasUsableSearchDistributionFallback(fallbackPayload)) {
+      primeSearchDistributionState(fallbackPayload)
+      ElMessage.warning(payload?.message || '商品分布接口暂不可用，已显示当前销售记录关联信息')
+      return
+    }
     searchDistributionVisible.value = false
     ElMessage.error(payload?.message || '商品分布加载失败')
     return
@@ -1725,12 +1807,14 @@ async function runGlobalSearch(keywordValue) {
     return
   }
 
+  const goodsRows = mergeGlobalSearchGoods(goodsPayload?.items || [], keyword)
+  const distributionRows = Array.isArray(distributionPayload?.items) ? distributionPayload.items : []
   const groups = [
     buildSearchGroup(
       'distribution',
       '库存分布',
       searchTypeIcons.distribution,
-      (distributionPayload?.items || []).map((item) => ({
+      distributionRows.map((item) => ({
         key: `distribution-${item.id}`,
         title: buildGoodsTitle(item),
         badge: `库存 ${item.stock ?? 0}`,
@@ -1742,7 +1826,7 @@ async function runGlobalSearch(keywordValue) {
       'goods',
       '商品',
       searchTypeIcons.goods,
-      (goodsPayload?.items || []).map((item) => ({
+      goodsRows.map((item) => ({
         key: `goods-${item.id}`,
         title: buildGoodsTitle(item),
         badge: '',
@@ -2087,6 +2171,17 @@ function handleOpenGlobalSearchEvent() {
   openGlobalSearch()
 }
 
+function handleOpenGoodsDistributionEvent(event) {
+  const itemId = Number(event?.detail?.itemId || 0)
+  const fallbackPayload = event?.detail?.fallbackPayload || null
+  if (!itemId && !hasUsableSearchDistributionFallback(fallbackPayload)) {
+    ElMessage.warning('当前商品信息未准备完成')
+    return
+  }
+  searchVisible.value = false
+  void openGlobalSearchDistribution(itemId, fallbackPayload)
+}
+
 function handleGlobalKeydown(event) {
   if ((event.metaKey || event.ctrlKey) && String(event.key || '').toLowerCase() === 'k') {
     event.preventDefault()
@@ -2207,6 +2302,7 @@ onMounted(() => {
   void loadNotifications({ silent: true })
   window.addEventListener('resize', detectMobile)
   window.addEventListener('aqc:open-global-search', handleOpenGlobalSearchEvent)
+  window.addEventListener('aqc:open-goods-distribution', handleOpenGoodsDistributionEvent)
   document.addEventListener('keydown', handleGlobalKeydown)
   greetingTimer = window.setInterval(() => {
     greetingTick.value = Date.now()
@@ -2219,6 +2315,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', detectMobile)
   window.removeEventListener('aqc:open-global-search', handleOpenGlobalSearchEvent)
+  window.removeEventListener('aqc:open-goods-distribution', handleOpenGoodsDistributionEvent)
   document.removeEventListener('keydown', handleGlobalKeydown)
   clearSidebarIntroTimer()
   clearSidebarTextTimer()

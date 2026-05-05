@@ -811,7 +811,7 @@ function goToScope(scope) {
 }
 
 function openCreateWorkOrder() {
-  router.push({ name: 'work-orders', query: { compose: '1', type: 'transfer' } })
+  router.push({ name: 'work-orders', query: { compose: '1' } })
 }
 
 function openWorkOrders() {

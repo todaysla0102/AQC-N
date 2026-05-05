@@ -1,5 +1,225 @@
 <template>
-  <section class="work-order-page">
+  <section class="work-order-page" :class="{ 'work-order-page--mobile-flow': showMobileWorkOrderEditor }">
+    <template v-if="showMobileWorkOrderEditor">
+      <section class="mobile-work-order-flow motion-fade-slide" style="--motion-delay: 0.04s">
+        <header class="mobile-sales-step-header mobile-work-order-step-header">
+          <button type="button" class="mobile-sales-back-button" aria-label="返回" @click="handleMobileWorkOrderBack">
+            <el-icon><ArrowLeft /></el-icon>
+          </button>
+          <div class="mobile-sales-current-step">
+            <span>当前步骤</span>
+            <strong>{{ mobileWorkOrderCurrentStepLabel }}</strong>
+          </div>
+        </header>
+
+        <transition :name="mobileWorkOrderTransitionName" mode="out-in">
+          <section v-if="mobileWorkOrderStep === 1" key="category" class="mobile-sales-step-panel mobile-work-order-step-panel">
+            <div class="mobile-work-order-choice-grid">
+              <button
+                v-for="item in categoryOptions"
+                :key="item.value"
+                type="button"
+                class="mobile-work-order-type-card mobile-work-order-choice"
+                :class="{ active: categoryDraft.category === item.value }"
+                @click="selectMobileWorkOrderCategory(item.value)"
+              >
+                <span>{{ item.value === 'goods' ? '货' : '销' }}</span>
+                <strong>{{ item.label }}</strong>
+              </button>
+            </div>
+            <div class="mobile-work-order-bottom-actions">
+              <el-button type="primary" class="mobile-sales-submit" @click="goMobileWorkOrderStep(2)">下一步</el-button>
+            </div>
+          </section>
+
+          <section v-else-if="mobileWorkOrderStep === 2" key="type" class="mobile-sales-step-panel mobile-work-order-step-panel">
+            <div class="mobile-work-order-type-list">
+              <button
+                v-for="item in visibleTypeOptions"
+                :key="item.value"
+                type="button"
+                class="mobile-work-order-type-card"
+                :class="{ active: form.orderType === item.value }"
+                @click="changeOrderType(item.value)"
+              >
+                <span>{{ item.prefix }}</span>
+                <strong>{{ item.label }}</strong>
+              </button>
+            </div>
+            <div class="mobile-work-order-bottom-actions">
+              <el-button type="primary" class="mobile-sales-submit" @click="goMobileWorkOrderStep(3)">下一步</el-button>
+            </div>
+          </section>
+
+          <section v-else-if="mobileWorkOrderStep === 3" key="info" class="mobile-sales-step-panel mobile-work-order-step-panel">
+            <el-form label-position="top" class="mobile-work-order-form" @submit.prevent>
+              <section class="mobile-work-order-form-card">
+                <div class="sales-filter-field sales-filter-field-wide">
+                  <label class="sales-filter-label">事由</label>
+                  <el-input v-model.trim="form.reason" maxlength="255" :placeholder="defaultReason" />
+                </div>
+
+                <div v-if="showSourceSelector" class="sales-filter-field">
+                  <label class="sales-filter-label">{{ sourceLabel }}</label>
+                  <el-select v-model="form.sourceShopId" clearable filterable class="full-width" :placeholder="`请选择${sourceLabel}`">
+                    <el-option v-for="item in sourceOptions" :key="item.id" :label="displayShopName(item.name)" :value="item.id" />
+                  </el-select>
+                </div>
+
+                <div v-if="form.orderType === 'sale'" class="sales-filter-field mobile-work-order-switch-field">
+                  <label class="sales-filter-label">变动库存</label>
+                  <el-switch v-model="form.saleAffectsInventory" @change="onSaleAffectsInventoryChange" />
+                </div>
+
+                <div v-if="form.orderType === 'sale' && form.saleAffectsInventory" class="sales-filter-field">
+                  <label class="sales-filter-label">发货店铺/仓库</label>
+                  <el-select v-model="saleShipShopId" clearable filterable class="full-width" placeholder="请选择发货店铺/仓库" @change="onSaleHeaderShipShopChange">
+                    <el-option v-for="item in stockLocationOptions" :key="`mobile-sale-header-ship-${item.id}`" :label="displayShopName(item.name)" :value="item.id" />
+                  </el-select>
+                </div>
+
+                <div v-if="showTargetSelector" class="sales-filter-field">
+                  <label class="sales-filter-label">{{ targetLabel }}</label>
+                  <el-select v-model="form.targetShopId" clearable filterable class="full-width" :placeholder="`请选择${targetLabel}`">
+                    <el-option v-for="item in targetOptions" :key="item.id" :label="displayShopName(item.name)" :value="item.id" />
+                  </el-select>
+                </div>
+
+                <div v-if="form.orderType === 'purchase'" class="sales-filter-field">
+                  <label class="sales-filter-label">供货单位</label>
+                  <el-autocomplete v-model="form.supplierName" class="full-width" :fetch-suggestions="fetchOtherWarehouseSuggestions" clearable maxlength="255" placeholder="请输入供货单位" />
+                </div>
+
+                <div v-if="form.orderType === 'return'" class="sales-filter-field">
+                  <label class="sales-filter-label">收货单位</label>
+                  <el-autocomplete v-model="form.partnerName" class="full-width" :fetch-suggestions="fetchOtherWarehouseSuggestions" clearable maxlength="255" placeholder="请输入收货单位" />
+                </div>
+
+                <div class="sales-filter-field">
+                  <label class="sales-filter-label">申请人</label>
+                  <el-input :model-value="applicantName" readonly />
+                </div>
+
+                <div class="sales-filter-field">
+                  <label class="sales-filter-label">负责人</label>
+                  <el-select v-model="form.approverId" clearable filterable class="full-width" :placeholder="approverPlaceholder">
+                    <el-option v-for="item in meta.approverOptions" :key="item.id" :label="item.displayName ? `${item.displayName} · ${item.username}` : item.username" :value="item.id" />
+                  </el-select>
+                </div>
+
+                <div class="sales-filter-field">
+                  <label class="sales-filter-label">共享群组</label>
+                  <el-select v-model="form.groupId" filterable class="full-width" placeholder="请选择共享群组">
+                    <el-option v-for="item in meta.groups" :key="item.id" :label="`${item.name}${item.isDefault ? ' · 默认' : ''} · ${item.memberCount} 人`" :value="item.id" />
+                  </el-select>
+                </div>
+
+                <div class="sales-filter-field">
+                  <label class="sales-filter-label">日期</label>
+                  <el-input v-model="form.formDate" type="datetime-local" />
+                </div>
+              </section>
+            </el-form>
+            <div class="mobile-work-order-bottom-actions">
+              <el-button type="primary" class="mobile-sales-submit" @click="goMobileWorkOrderStep(4)">下一步</el-button>
+            </div>
+          </section>
+
+          <section v-else key="detail" class="mobile-sales-step-panel mobile-work-order-step-panel mobile-work-order-detail-step">
+            <template v-if="isSaleExchangeType">
+              <section class="mobile-work-order-detail-group">
+                <header class="mobile-work-order-section-head">
+                  <strong>换入</strong>
+                </header>
+                <div class="mobile-work-order-add-actions mobile-work-order-add-actions-single">
+                  <el-button type="primary" @click="openMobileOrderPicker('incoming')">录入订单</el-button>
+                </div>
+                <section class="mobile-work-order-item-list">
+                  <button
+                    v-for="item in mobileEditorItemsForTarget('incoming')"
+                    :key="mobileEditorItemKey(item)"
+                    type="button"
+                    class="mobile-sales-record-card mobile-work-order-item-card"
+                    @click="openMobileItemActions(item)"
+                  >
+                    <div class="mobile-sales-record-main">
+                      <strong>{{ mobileEditorItemTitle(item) }}</strong>
+                      <p>{{ mobileEditorItemSubtitle(item) }}</p>
+                      <small>{{ mobileEditorItemMeta(item) }}</small>
+                    </div>
+                  </button>
+                  <div v-if="!mobileEditorItemsForTarget('incoming').length" class="mobile-sales-empty">暂无换入订单</div>
+                </section>
+              </section>
+
+              <section class="mobile-work-order-detail-group">
+                <header class="mobile-work-order-section-head">
+                  <strong>换出</strong>
+                </header>
+                <div class="mobile-work-order-add-actions">
+                  <el-button type="primary" @click="openMobileGoodsScannerEntry('outgoing')">扫码录入商品</el-button>
+                  <el-button @click="openMobileGoodsSearchEntry('outgoing')">搜索型号录入</el-button>
+                </div>
+                <section class="mobile-work-order-item-list">
+                  <button
+                    v-for="item in mobileEditorItemsForTarget('outgoing')"
+                    :key="mobileEditorItemKey(item)"
+                    type="button"
+                    class="mobile-sales-record-card mobile-work-order-item-card"
+                    @click="openMobileItemActions(item)"
+                  >
+                    <div class="mobile-sales-record-main">
+                      <strong>{{ mobileEditorItemTitle(item) }}</strong>
+                      <p>{{ mobileEditorItemSubtitle(item) }}</p>
+                      <small>{{ mobileEditorItemMeta(item) }}</small>
+                    </div>
+                  </button>
+                  <div v-if="!mobileEditorItemsForTarget('outgoing').length" class="mobile-sales-empty">暂无换出商品</div>
+                </section>
+              </section>
+            </template>
+
+            <template v-else>
+              <div class="mobile-work-order-add-actions" :class="{ 'mobile-work-order-add-actions-single': usesSalesRecordBinding }">
+                <template v-if="usesSalesRecordBinding">
+                  <el-button type="primary" @click="openMobileOrderPicker('default')">录入订单</el-button>
+                </template>
+                <template v-else>
+                  <el-button type="primary" @click="openMobileGoodsScannerEntry('default')">扫码录入商品</el-button>
+                  <el-button @click="openMobileGoodsSearchEntry('default')">搜索型号录入</el-button>
+                </template>
+              </div>
+
+              <section class="mobile-work-order-item-list">
+                <button
+                  v-for="item in mobileEditorDisplayItems"
+                  :key="mobileEditorItemKey(item)"
+                  type="button"
+                  class="mobile-sales-record-card mobile-work-order-item-card"
+                  @click="openMobileItemActions(item)"
+                >
+                  <div class="mobile-sales-record-main">
+                    <strong>{{ mobileEditorItemTitle(item) }}</strong>
+                    <p>{{ mobileEditorItemSubtitle(item) }}</p>
+                    <small>{{ mobileEditorItemMeta(item) }}</small>
+                  </div>
+                </button>
+                <div v-if="!mobileEditorDisplayItems.length" class="mobile-sales-empty">
+                  暂无工单明细
+                </div>
+              </section>
+            </template>
+
+            <div class="mobile-work-order-bottom-actions mobile-work-order-submit-actions">
+              <el-button :loading="savingDraft" @click="confirmMobileSaveEditor('draft')">保存草稿</el-button>
+              <el-button type="primary" :loading="submitting" @click="confirmMobileSaveEditor('pending')">提交审批</el-button>
+            </div>
+          </section>
+        </transition>
+      </section>
+    </template>
+
+    <template v-else>
     <section class="catalog-controls card-surface motion-fade-slide work-order-controls" style="--motion-delay: 0.08s">
       <div class="goods-search-shell work-order-search-shell">
         <el-input
@@ -149,7 +369,7 @@
             :class="{ active: scope === item.value }"
             @click="setScope(item.value)"
           >
-            <span>{{ item.label }}</span>
+            <span>{{ scopeDisplayLabel(item) }}</span>
             <small v-if="item.badge !== undefined">{{ item.badge }}</small>
           </button>
         </div>
@@ -200,6 +420,27 @@
         </el-table>
       </div>
 
+      <section class="mobile-work-order-list" v-loading="loading">
+        <article
+          v-for="row in orders"
+          :key="row.id"
+          class="mobile-sales-record-card mobile-work-order-card"
+          role="button"
+          tabindex="0"
+          @click="openMobileOrderActions(row)"
+          @keyup.enter="openMobileOrderActions(row)"
+        >
+          <div class="mobile-sales-record-main">
+            <strong>{{ replaceShopNameAliases(row.reason) || '-' }}</strong>
+            <p>{{ [row.orderTypeLabel, row.statusLabel, row.applicantName].filter(Boolean).join(' · ') }}</p>
+            <small>{{ [row.orderNum, formatDateLabel(row.formDate)].filter(Boolean).join(' · ') }}</small>
+          </div>
+        </article>
+        <div v-if="!orders.length && !loading" class="mobile-sales-empty">
+          暂无工单记录
+        </div>
+      </section>
+
       <div class="pager-wrap">
         <el-pagination
           background
@@ -213,6 +454,7 @@
         />
       </div>
     </section>
+    </template>
 
     <el-dialog
       v-model="categoryDialogVisible"
@@ -238,6 +480,7 @@
     </el-dialog>
 
     <ResponsiveDialog
+      v-if="!showMobileWorkOrderEditor"
       v-model="editorVisible"
       :title="editorTitle"
       width="min(1320px, 98vw)"
@@ -1634,6 +1877,420 @@
       </template>
     </ResponsiveDialog>
 
+    <MobileBottomSheet
+      v-if="isMobileViewport"
+      v-model="mobileOrderActionVisible"
+      :title="replaceShopNameAliases(activeMobileOrder?.reason) || activeMobileOrder?.orderNum || '工单操作'"
+      subtitle="工单管理"
+      :initial-snap="0.42"
+      :expanded-snap="0.72"
+    >
+      <section class="work-order-category-chooser sales-record-mobile-action-menu mobile-work-order-action-menu">
+        <button type="button" class="work-order-category-card" @click="openMobileOrderDetail">
+          <strong>查看工单</strong>
+        </button>
+        <button v-if="activeMobileOrder && canAllocateRow(activeMobileOrder)" type="button" class="work-order-category-card" @click="allocateMobileOrder">
+          <strong>分配工单</strong>
+        </button>
+        <button v-if="activeMobileOrder && canEditRow(activeMobileOrder)" type="button" class="work-order-category-card" @click="editMobileOrder">
+          <strong>编辑工单</strong>
+        </button>
+        <button v-if="activeMobileOrder && canWithdrawRow(activeMobileOrder)" type="button" class="work-order-category-card" @click="withdrawMobileOrder">
+          <strong>转草稿</strong>
+        </button>
+        <button v-if="activeMobileOrder && canDeleteRow(activeMobileOrder)" type="button" class="work-order-category-card danger" @click="deleteMobileOrder">
+          <strong>删除工单</strong>
+        </button>
+        <button v-if="activeMobileOrder && canReviewRow(activeMobileOrder)" type="button" class="work-order-category-card" @click="reviewMobileOrder">
+          <strong>审批工单</strong>
+        </button>
+        <button type="button" class="work-order-category-card" @click="printMobileOrder">
+          <strong>打印工单</strong>
+        </button>
+      </section>
+    </MobileBottomSheet>
+
+    <MobileBottomSheet
+      v-if="isMobileViewport"
+      v-model="mobileItemActionVisible"
+      :title="mobileEditorItemTitle(activeMobileItem)"
+      subtitle="工单明细"
+      :initial-snap="0.62"
+      :expanded-snap="0.94"
+    >
+      <section class="mobile-work-order-item-detail-sheet">
+        <div
+          v-for="row in mobileItemDetailRows(activeMobileItem)"
+          :key="row.label"
+          class="mobile-work-order-detail-row"
+        >
+          <span>{{ row.label }}</span>
+          <strong>{{ row.value }}</strong>
+        </div>
+      </section>
+      <template #footer>
+        <div class="form-actions mobile-sales-sheet-actions">
+          <el-button @click="editMobileItem">编辑</el-button>
+          <el-button type="danger" @click="deleteMobileItem">删除</el-button>
+        </div>
+      </template>
+    </MobileBottomSheet>
+
+    <MobileBottomSheet
+      v-if="isMobileViewport"
+      v-model="mobileGoodsEntryVisible"
+      :title="mobileGoodsEntryMode === 'scanner' ? '扫码录入商品' : '搜索型号录入'"
+      :subtitle="mobileGoodsEntryTargetLabel"
+      :initial-snap="0.68"
+      :expanded-snap="0.92"
+      @closed="closeMobileGoodsEntry"
+    >
+      <section class="mobile-work-order-entry-sheet">
+        <template v-if="mobileGoodsEntryMode === 'scanner'">
+          <div class="mobile-sales-scanner-sheet">
+            <div class="scanner-stage scanner-modal-stage" :class="{ interactive: scannerManualFocusSupported }" @click="onMobileScannerStageFocus">
+              <video ref="mobileScannerVideoRef" playsinline muted></video>
+              <div class="scanner-reticle scanner-reticle-barcode" aria-hidden="true"></div>
+              <span v-if="scannerManualFocusSupported" class="scanner-focus-badge">点按画面手动对焦</span>
+            </div>
+            <p class="scan-hint scanner-modal-hint">{{ scannerHint }}</p>
+            <div class="scanner-result-card" :class="{ empty: !activeMobileGoodsCandidate }">
+              <span>识别结果</span>
+              <strong>{{ activeMobileGoodsCandidate ? mobileGoodsCandidateTitle : (mobileScannerResultText || '等待识别条码') }}</strong>
+              <p>{{ activeMobileGoodsCandidate ? mobileGoodsCandidateSubtitle : '将条码放入取景框内，识别后可确认数量。' }}</p>
+            </div>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="mobile-sales-search-area active mobile-work-order-search-area">
+            <el-input
+              ref="mobileGoodsSearchInputRef"
+              v-model.trim="mobileGoodsSearchKeyword"
+              clearable
+              placeholder="搜索品牌 / 系列 / 型号 / 条码"
+              class="goods-search-input mobile-sales-search-input"
+              @input="onMobileGoodsSearchInput"
+              @keyup.enter="loadMobileGoodsSearchResults"
+            />
+          </div>
+          <section v-if="mobileGoodsSearchKeyword && !activeMobileGoodsCandidate" class="mobile-sales-search-results" v-loading="mobileGoodsSearchLoading">
+            <button
+              v-for="item in mobileGoodsSearchResults"
+              :key="item.id"
+              type="button"
+              class="mobile-sales-result-row"
+              @click="selectMobileGoodsCandidate(item)"
+            >
+              <span>{{ item.model || item.name || '未设置型号' }}</span>
+              <small>{{ [item.brand, item.series, item.barcode].filter(Boolean).join(' · ') || '未设置品牌系列' }}</small>
+              <strong>{{ mobileGoodsSearchResultMeta(item) }}</strong>
+            </button>
+            <div v-if="!mobileGoodsSearchResults.length && !mobileGoodsSearchLoading" class="mobile-sales-empty">暂无匹配商品</div>
+          </section>
+          <div v-else-if="!activeMobileGoodsCandidate" class="mobile-sales-empty">输入型号、品牌或条码后开始联想</div>
+        </template>
+
+        <section v-if="activeMobileGoodsCandidate" class="mobile-work-order-confirm-card">
+          <div class="mobile-sales-product-hero">
+            <strong>{{ mobileGoodsCandidateTitle }}</strong>
+            <span>{{ mobileGoodsCandidateSubtitle }}</span>
+          </div>
+          <div class="mobile-sales-status-grid mobile-work-order-stock-grid">
+            <article><span>{{ mobileGoodsPrimaryStockLabel }}</span><strong>{{ Number(activeMobileGoodsCandidate.shopQuantity ?? activeMobileGoodsCandidate.sourceStock ?? 0) }}</strong></article>
+            <article><span>{{ mobileGoodsSecondaryStockLabel }}</span><strong>{{ Number(activeMobileGoodsCandidate.secondaryShopQuantity ?? activeMobileGoodsCandidate.targetStock ?? 0) }}</strong></article>
+            <article class="wide"><span>价格</span><strong>¥ {{ formatMoney(activeMobileGoodsCandidate.price) }}</strong></article>
+          </div>
+          <label class="mobile-work-order-form-field">
+            <span>数量</span>
+            <el-input
+              v-model="mobileGoodsQuantityInput"
+              inputmode="numeric"
+              class="mobile-work-order-long-input"
+              @input="onMobileGoodsQuantityInput"
+            />
+          </label>
+        </section>
+      </section>
+      <template #footer>
+        <div class="form-actions mobile-sales-sheet-actions">
+          <el-button @click="resetMobileGoodsCandidate">{{ activeMobileGoodsCandidate ? '重新搜索' : '清空' }}</el-button>
+          <el-button type="primary" :disabled="!activeMobileGoodsCandidate" @click="confirmMobileGoodsCandidate">确认录入</el-button>
+        </div>
+      </template>
+    </MobileBottomSheet>
+
+    <MobileBottomSheet
+      v-if="isMobileViewport"
+      v-model="mobileOrderPickerVisible"
+      title="录入订单"
+      :subtitle="mobileOrderPickerTargetLabel"
+      :initial-snap="0.72"
+      :expanded-snap="0.94"
+    >
+      <section class="mobile-work-order-entry-sheet" v-loading="mobileOrderPickerLoading">
+        <section class="mobile-work-order-order-filters">
+          <label class="mobile-work-order-form-field">
+            <span>店铺</span>
+            <el-select
+              v-model="mobileOrderPickerShopId"
+              filterable
+              clearable
+              class="full-width mobile-work-order-long-control"
+              placeholder="筛选销售店铺"
+              @change="loadMobileOrderPickerRows"
+            >
+              <el-option v-for="item in sourceOptions" :key="`mobile-order-shop-${item.id}`" :label="displayShopName(item.name)" :value="item.id" />
+            </el-select>
+          </label>
+          <label class="mobile-work-order-form-field">
+            <span>销售员</span>
+            <el-select
+              v-model="mobileOrderPickerSalesperson"
+              filterable
+              clearable
+              class="full-width mobile-work-order-long-control"
+              placeholder="筛选销售员"
+              @change="loadMobileOrderPickerRows"
+            >
+              <el-option
+                v-for="item in mobileOrderPickerSalespersonOptions"
+                :key="`mobile-order-salesperson-${item.value}`"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </label>
+          <label class="mobile-work-order-form-field mobile-work-order-order-date-filter">
+            <span>时间</span>
+            <el-date-picker
+              v-model="mobileOrderPickerDateRange"
+              type="daterange"
+              unlink-panels
+              clearable
+              class="full-width mobile-work-order-long-control"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              range-separator="至"
+              value-format="YYYY-MM-DD"
+              @change="loadMobileOrderPickerRows"
+            />
+          </label>
+        </section>
+        <section class="mobile-sales-record-list mobile-work-order-order-list">
+          <button
+            v-for="row in mobileOrderPickerRows"
+            :key="row.id"
+            type="button"
+            class="mobile-sales-record-card"
+            @click="selectMobileOrderRecord(row)"
+          >
+            <div class="mobile-sales-record-main">
+              <strong>{{ row.goodsModel || row.goodsDisplayName || '未设置商品' }}</strong>
+              <p>{{ [row.salesperson, row.shopName].filter(Boolean).join(' · ') }}</p>
+              <small>{{ [row.orderNum, row.soldAt, `¥ ${formatMoney(row.receivedAmount)}`].filter(Boolean).join(' · ') }}</small>
+            </div>
+          </button>
+          <div v-if="!mobileOrderPickerRows.length && !mobileOrderPickerLoading" class="mobile-sales-empty">暂无可选择订单</div>
+        </section>
+      </section>
+    </MobileBottomSheet>
+
+    <MobileBottomSheet
+      v-if="isMobileViewport"
+      v-model="mobileItemEditVisible"
+      :title="mobileEditorItemTitle(activeMobileItem)"
+      subtitle="编辑明细"
+      :initial-snap="0.66"
+      :expanded-snap="0.9"
+    >
+      <section v-if="activeMobileItem" class="mobile-work-order-edit-form">
+        <label v-if="mobileRowUsesSalesRecord(activeMobileItem)" class="mobile-work-order-form-field">
+          <span>订单号</span>
+          <el-input v-model.trim="activeMobileItem.orderNum" class="mobile-work-order-long-input" :readonly="mobileRowOrderReadonly(activeMobileItem)" />
+        </label>
+
+        <label v-if="mobileRowShowSalesFields(activeMobileItem)" class="mobile-work-order-form-field">
+          <span>销售店铺</span>
+          <el-select
+            v-if="mobileRowSaleShopEditable(activeMobileItem)"
+            v-model="activeMobileItem.saleShopId"
+            filterable
+            class="full-width mobile-work-order-long-control"
+            placeholder="请选择销售店铺"
+            @change="handleSaleInventoryLocationChange(activeMobileItem, 'sale')"
+          >
+            <el-option v-for="item in sourceOptions" :key="`mobile-edit-sale-${item.id}`" :label="displayShopName(item.name)" :value="item.id" />
+          </el-select>
+          <el-input v-else :model-value="displayShopName(activeMobileItem.saleShopName) || '-'" readonly class="mobile-work-order-long-input" />
+        </label>
+
+        <label v-if="mobileRowShowReceiveShop(activeMobileItem)" class="mobile-work-order-form-field">
+          <span>收货店铺/仓库</span>
+          <el-select
+            v-model="activeMobileItem.receiveShopId"
+            filterable
+            class="full-width mobile-work-order-long-control"
+            placeholder="请选择收货店铺/仓库"
+            @change="handleSaleInventoryLocationChange(activeMobileItem, 'receive')"
+          >
+            <el-option v-for="item in stockLocationOptions" :key="`mobile-edit-receive-${item.id}`" :label="displayShopName(item.name)" :value="item.id" />
+          </el-select>
+        </label>
+
+        <label v-if="mobileRowShowShipShop(activeMobileItem)" class="mobile-work-order-form-field">
+          <span>发货店铺/仓库</span>
+          <el-select
+            v-model="activeMobileItem.shipShopId"
+            filterable
+            class="full-width mobile-work-order-long-control"
+            placeholder="请选择发货店铺/仓库"
+            @change="handleSaleInventoryLocationChange(activeMobileItem, 'ship')"
+          >
+            <el-option v-for="item in stockLocationOptions" :key="`mobile-edit-ship-${item.id}`" :label="displayShopName(item.name)" :value="item.id" />
+          </el-select>
+        </label>
+
+        <label v-if="mobileRowShowSalesFields(activeMobileItem)" class="mobile-work-order-form-field">
+          <span>销售员</span>
+          <el-select v-model="activeMobileItem.salesperson" filterable class="full-width mobile-work-order-long-control" placeholder="请选择销售员">
+            <el-option
+              v-for="item in getSalespersonOptionsForRow(activeMobileItem)"
+              :key="`mobile-edit-salesperson-${activeMobileItem.localId}-${item.id}`"
+              :label="formatSalespersonLabel(item)"
+              :value="formatSalespersonValue(item)"
+            />
+          </el-select>
+        </label>
+
+        <label class="mobile-work-order-form-field">
+          <span>商品名称</span>
+          <el-input
+            v-model.trim="activeMobileItem.goodsName"
+            class="mobile-work-order-long-input"
+            :readonly="mobileRowGoodsReadonly(activeMobileItem)"
+          />
+        </label>
+
+        <label class="mobile-work-order-form-field">
+          <span>商品编码</span>
+          <el-input v-model.trim="activeMobileItem.productCode" class="mobile-work-order-long-input" />
+        </label>
+
+        <div class="mobile-work-order-edit-grid">
+          <label class="mobile-work-order-form-field">
+            <span>数量</span>
+            <el-input v-model="activeMobileItem.quantity" inputmode="numeric" class="mobile-work-order-long-input" @input="syncRowAmount(activeMobileItem)" />
+          </label>
+          <label class="mobile-work-order-form-field">
+            <span>单位</span>
+            <el-input model-value="只" readonly class="mobile-work-order-long-input" />
+          </label>
+        </div>
+
+        <div class="mobile-work-order-edit-grid">
+          <label class="mobile-work-order-form-field">
+            <span>单价</span>
+            <el-input v-model="activeMobileItem.unitPrice" inputmode="decimal" class="mobile-work-order-long-input" @input="syncRowAmount(activeMobileItem)" />
+          </label>
+          <label class="mobile-work-order-form-field">
+            <span>{{ isSalesOrderType ? '应付金额' : '金额' }}</span>
+            <el-input
+              v-if="isSalesOrderType"
+              v-model="activeMobileItem.receivableAmount"
+              inputmode="decimal"
+              class="mobile-work-order-long-input"
+              @input="syncRowAmount(activeMobileItem)"
+            />
+            <el-input v-else :model-value="formatMoney(activeMobileItem.totalAmount)" readonly class="mobile-work-order-long-input" />
+          </label>
+        </div>
+
+        <div v-if="isSalesOrderType" class="mobile-work-order-edit-grid">
+          <label class="mobile-work-order-form-field">
+            <span>实付金额</span>
+            <el-input v-model="activeMobileItem.receivedAmount" inputmode="decimal" class="mobile-work-order-long-input" @input="syncRowAmount(activeMobileItem)" />
+          </label>
+          <label class="mobile-work-order-form-field">
+            <span>折扣</span>
+            <el-input v-model="activeMobileItem.discountRate" inputmode="decimal" class="mobile-work-order-long-input" @input="syncRowDiscount(activeMobileItem)" />
+          </label>
+        </div>
+
+        <label v-if="mobileRowShowCoupon(activeMobileItem)" class="mobile-work-order-form-field">
+          <span>优惠券</span>
+          <el-input v-model="activeMobileItem.couponAmount" inputmode="decimal" class="mobile-work-order-long-input" @input="syncRowDiscount(activeMobileItem)" />
+        </label>
+
+        <div v-if="mobileRowShowTransferStocks(activeMobileItem)" class="mobile-work-order-edit-grid">
+          <label class="mobile-work-order-form-field">
+            <span>发货库存</span>
+            <el-input :model-value="Number(activeMobileItem.sourceStock || 0)" readonly class="mobile-work-order-long-input" />
+          </label>
+          <label class="mobile-work-order-form-field">
+            <span>收货库存</span>
+            <el-input :model-value="Number(activeMobileItem.targetStock || 0)" readonly class="mobile-work-order-long-input" />
+          </label>
+        </div>
+
+        <div class="mobile-work-order-edit-grid">
+          <label class="mobile-work-order-form-field">
+            <span>品牌</span>
+            <el-autocomplete
+              v-model="activeMobileItem.brand"
+              class="full-width mobile-work-order-long-control"
+              :fetch-suggestions="fetchBrandSuggestions"
+              clearable
+              placeholder="输入品牌"
+              @select="(item) => { activeMobileItem.brand = item.value }"
+            />
+          </label>
+          <label class="mobile-work-order-form-field">
+            <span>系列</span>
+            <el-autocomplete
+              v-model="activeMobileItem.series"
+              class="full-width mobile-work-order-long-control"
+              :fetch-suggestions="fetchSeriesSuggestions"
+              clearable
+              placeholder="输入系列"
+              @select="(item) => { activeMobileItem.series = item.value }"
+            />
+          </label>
+        </div>
+
+        <label class="mobile-work-order-form-field">
+          <span>条码</span>
+          <el-input
+            v-model.trim="activeMobileItem.barcode"
+            class="mobile-work-order-long-input"
+            :readonly="mobileRowBarcodeReadonly(activeMobileItem)"
+            @change="() => onRowBarcodeChange(activeMobileItem)"
+          />
+        </label>
+
+        <label v-if="mobileRowShowChannel(activeMobileItem)" class="mobile-work-order-form-field">
+          <span>渠道</span>
+          <el-input v-model.trim="activeMobileItem.channel" class="mobile-work-order-long-input" />
+        </label>
+
+        <label v-if="mobileRowShowCustomer(activeMobileItem)" class="mobile-work-order-form-field">
+          <span>客户姓名</span>
+          <el-input v-model.trim="activeMobileItem.customerName" class="mobile-work-order-long-input" />
+        </label>
+
+        <label class="mobile-work-order-form-field">
+          <span>备注</span>
+          <el-input v-model.trim="activeMobileItem.remark" type="textarea" :rows="3" class="mobile-work-order-long-input" />
+        </label>
+      </section>
+      <template #footer>
+        <div class="form-actions mobile-sales-sheet-actions">
+          <el-button @click="mobileItemEditVisible = false">关闭</el-button>
+          <el-button type="primary" @click="finishMobileItemEdit">保存</el-button>
+        </div>
+      </template>
+    </MobileBottomSheet>
+
     <ResponsiveDialog
       v-model="workOrderSettingsDialogVisible"
       title="工单设置"
@@ -2532,16 +3189,19 @@
 </template>
 
 <script setup>
+import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 
 import CollapsePanelTransition from '../components/CollapsePanelTransition.vue'
+import MobileBottomSheet from '../components/MobileBottomSheet.vue'
 import ResponsiveDialog from '../components/ResponsiveDialog.vue'
 import ResponsiveTableActions from '../components/ResponsiveTableActions.vue'
 import WorkOrderGoodsBatchDialog from '../components/WorkOrderGoodsBatchDialog.vue'
 import WorkOrderGoodsPickerDialog from '../components/WorkOrderGoodsPickerDialog.vue'
 import WorkOrderSalesPickerDialog from '../components/WorkOrderSalesPickerDialog.vue'
+import { useBarcodeScanner } from '../composables/useBarcodeScanner'
 import { useMobileViewport } from '../composables/useMobileViewport'
 import { apiDelete, apiGet, apiPost, apiPut } from '../services/api'
 import { useAuthStore } from '../stores/auth'
@@ -2551,16 +3211,166 @@ import { resolveTableActionWidth } from '../utils/tableActions'
 import { displayShopName, replaceShopNameAliases, SHOP_TYPE_OTHER_WAREHOUSE } from '../utils/shops'
 
 const authStore = useAuthStore()
-const { isMobileViewport } = useMobileViewport()
+const { isMobileViewport, updateViewport } = useMobileViewport()
 const route = useRoute()
 const router = useRouter()
 const ALLOCATION_TARGET_MEMORY_KEY = 'aqc_n_allocation_target_memory_v1'
+const localTestMockWorkOrdersEnabled = import.meta.env.VITE_LOCAL_TEST_LOGIN === 'true'
+const localTestWorkOrderCategories = [
+  { value: 'goods', label: '商品类工单' },
+  { value: 'sales', label: '销售类工单' },
+]
+const localTestWorkOrderTypes = [
+  { value: 'transfer', label: '商品调拨单', prefix: 'DB', category: 'goods' },
+  { value: 'purchase', label: '商品进货单', prefix: 'SJ', category: 'goods' },
+  { value: 'return', label: '商品退货单', prefix: 'ST', category: 'goods' },
+  { value: 'damage', label: '商品报损单', prefix: 'BS', category: 'goods' },
+  { value: 'sale', label: '销售单', prefix: 'XS', category: 'sales' },
+  { value: 'sale_return', label: '销售退货单', prefix: 'XT', category: 'sales' },
+  { value: 'sale_exchange', label: '销售换货单', prefix: 'XH', category: 'sales' },
+]
+const localTestShopOptions = [
+  { id: 9001, name: '本地测试门店', shopType: 0 },
+  { id: 9002, name: '本地测试仓库', shopType: 1 },
+  { id: 9003, name: '本地测试收货仓', shopType: 1 },
+]
+const localTestUserOption = {
+  id: 9001,
+  username: authStore.user?.username || 'La',
+  displayName: authStore.displayName || authStore.user?.username || '本地测试负责人',
+}
+const localTestGroupOption = {
+  id: 9001,
+  name: '本地测试共享群组',
+  description: '本地测试默认群组',
+  memberRole: 'owner',
+  memberCount: 2,
+  isDefault: true,
+}
+const localTestWorkOrderGoods = [
+  {
+    id: -901,
+    brand: 'CASIO',
+    series: 'G-SHOCK',
+    model: 'GM-2100-1A',
+    name: 'GM-2100-1A',
+    barcode: 'MOCK-GM2100',
+    price: 1490,
+    shopQuantity: 6,
+    secondaryShopQuantity: 12,
+  },
+  {
+    id: -902,
+    brand: 'CASIO',
+    series: 'BABY-G',
+    model: 'BA-110X-7A',
+    name: 'BA-110X-7A',
+    barcode: 'MOCK-BA110',
+    price: 990,
+    shopQuantity: 4,
+    secondaryShopQuantity: 8,
+  },
+  {
+    id: -903,
+    brand: 'CASIO',
+    series: 'EDIFICE',
+    model: 'ECB-2000DC-1A',
+    name: 'ECB-2000DC-1A',
+    barcode: 'MOCK-ECB2000',
+    price: 1890,
+    shopQuantity: 2,
+    secondaryShopQuantity: 9,
+  },
+  {
+    id: -904,
+    brand: 'CASIO',
+    series: 'PRO TREK',
+    model: 'PRW-61Y-3',
+    name: 'PRW-61Y-3',
+    barcode: 'MOCK-PRW61',
+    price: 2690,
+    shopQuantity: 3,
+    secondaryShopQuantity: 7,
+  },
+]
+const localTestWorkOrderSalesRecords = [
+  {
+    id: -9901,
+    orderNum: 'LT-SALE-ORDER-001',
+    soldAt: '2026-05-04 10:20:00',
+    salesperson: localTestUserOption.displayName,
+    shopId: 9001,
+    shopName: '本地测试门店',
+    shipShopId: 9002,
+    shipShopName: '本地测试仓库',
+    goodsId: -901,
+    goodsModel: 'GM-2100-1A',
+    goodsDisplayName: 'GM-2100-1A',
+    goodsBrand: 'CASIO',
+    goodsSeries: 'G-SHOCK',
+    goodsBarcode: 'MOCK-GM2100',
+    unitPrice: 1490,
+    quantity: 1,
+    receivableAmount: 1490,
+    receivedAmount: 1390,
+    couponAmount: 100,
+    discountRate: 9.33,
+    channel: '门店',
+  },
+  {
+    id: -9902,
+    orderNum: 'LT-SALE-ORDER-002',
+    soldAt: '2026-05-04 11:05:00',
+    salesperson: localTestUserOption.displayName,
+    shopId: 9001,
+    shopName: '本地测试门店',
+    shipShopId: 9002,
+    shipShopName: '本地测试仓库',
+    goodsId: -902,
+    goodsModel: 'BA-110X-7A',
+    goodsDisplayName: 'BA-110X-7A',
+    goodsBrand: 'CASIO',
+    goodsSeries: 'BABY-G',
+    goodsBarcode: 'MOCK-BA110',
+    unitPrice: 990,
+    quantity: 2,
+    receivableAmount: 1980,
+    receivedAmount: 1880,
+    couponAmount: 100,
+    discountRate: 9.49,
+    channel: '门店',
+  },
+  {
+    id: -9903,
+    orderNum: 'LT-SALE-ORDER-003',
+    soldAt: '2026-05-03 16:42:00',
+    salesperson: localTestUserOption.displayName,
+    shopId: 9001,
+    shopName: '本地测试门店',
+    shipShopId: 9003,
+    shipShopName: '本地测试收货仓',
+    goodsId: -903,
+    goodsModel: 'ECB-2000DC-1A',
+    goodsDisplayName: 'ECB-2000DC-1A',
+    goodsBrand: 'CASIO',
+    goodsSeries: 'EDIFICE',
+    goodsBarcode: 'MOCK-ECB2000',
+    unitPrice: 1890,
+    quantity: 1,
+    receivableAmount: 1890,
+    receivedAmount: 1790,
+    couponAmount: 100,
+    discountRate: 9.47,
+    channel: '小程序',
+  },
+]
 
 const loading = ref(false)
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
 const orders = ref([])
+const localTestWorkOrderState = ref([])
 const keyword = ref('')
 const dateRange = ref([])
 const orderTypeFilter = ref('')
@@ -2570,8 +3380,34 @@ const approverFilter = ref(null)
 const scope = ref('mine')
 const filterPanelOpen = ref(false)
 const editorVisible = ref(false)
+const mobileEditorSessionActive = ref(false)
 const categoryDialogVisible = ref(false)
 const editorStep = ref(1)
+const mobileWorkOrderStep = ref(1)
+const mobileWorkOrderTransitionName = ref('mobile-work-order-step-next')
+const mobileOrderActionVisible = ref(false)
+const activeMobileOrder = ref(null)
+const mobileItemActionVisible = ref(false)
+const activeMobileItem = ref(null)
+const mobileGoodsEntryVisible = ref(false)
+const mobileGoodsEntryMode = ref('search')
+const mobileGoodsEntryTarget = ref('default')
+const mobileGoodsSearchKeyword = ref('')
+const mobileGoodsSearchResults = ref([])
+const mobileGoodsSearchLoading = ref(false)
+const mobileGoodsSearchInputRef = ref(null)
+const activeMobileGoodsCandidate = ref(null)
+const mobileGoodsQuantityInput = ref('1')
+const mobileScannerResultText = ref('')
+const mobileOrderPickerVisible = ref(false)
+const mobileOrderPickerTarget = ref('default')
+const mobileOrderPickerRows = ref([])
+const mobileOrderPickerLoading = ref(false)
+const mobileOrderPickerShopId = ref(null)
+const mobileOrderPickerSalesperson = ref('')
+const mobileOrderPickerDateRange = ref([])
+const mobileItemEditVisible = ref(false)
+const mobileEditorRevision = ref(0)
 const detailVisible = ref(false)
 const detailLoading = ref(false)
 const submittingDetailReview = ref(false)
@@ -2705,9 +3541,30 @@ const salesRecordLookupTokens = new Map()
 const resolvedBarcodeByRow = new Map()
 let quickAddLookupToken = null
 
+const {
+  videoRef: mobileScannerVideoRef,
+  scannerHint,
+  scannerManualFocusSupported,
+  startScanner: startMobileScanner,
+  stopScanner: stopMobileScanner,
+  focusScannerAt: focusMobileScannerAt,
+} = useBarcodeScanner({
+  onDetected: async (code) => {
+    mobileScannerResultText.value = code
+    await resolveMobileGoodsBarcode(code)
+    await stopMobileScanner()
+  },
+})
+
 const editorStepOptions = [
   { value: 1, label: '工单信息' },
   { value: 2, label: '工单明细' },
+]
+const mobileWorkOrderStepOptions = [
+  { value: 1, label: '选择工单大类' },
+  { value: 2, label: '选择工单类型' },
+  { value: 3, label: '填写工单信息' },
+  { value: 4, label: '填写工单详情' },
 ]
 const allocationStepOptions = [
   { value: 1, label: '分配设置' },
@@ -2893,6 +3750,76 @@ const hasEditorUnsavedChanges = computed(() => (
   editorSnapshot.value &&
   editorSnapshot.value !== serializeEditorState()
 ))
+const showMobileWorkOrderEditor = computed(() => isMobileViewport.value && (editorVisible.value || mobileEditorSessionActive.value))
+const mobileWorkOrderCurrentStepLabel = computed(() => (
+  mobileWorkOrderStepOptions.find((item) => item.value === mobileWorkOrderStep.value)?.label || '新建工单'
+))
+const mobileEditorDisplayItems = computed(() => {
+  void mobileEditorRevision.value
+  return (
+    isSaleExchangeType.value
+      ? [...form.exchangeIncomingItems, ...form.exchangeOutgoingItems]
+      : form.items
+  ).filter((item) => mobileEditorItemHasContent(item))
+})
+const mobileGoodsEntryTargetLabel = computed(() => {
+  if (mobileGoodsEntryTarget.value === 'outgoing') {
+    return '换出商品'
+  }
+  return currentTypeLabel.value || '工单商品'
+})
+const mobileOrderPickerTargetLabel = computed(() => {
+  if (mobileOrderPickerTarget.value === 'incoming') {
+    return '换入订单'
+  }
+  return '销售订单'
+})
+const mobileGoodsCandidateTitle = computed(() => {
+  const item = activeMobileGoodsCandidate.value
+  return [item?.brand, item?.series, item?.model || item?.name].filter(Boolean).join(' ') || '未设置型号'
+})
+const mobileGoodsCandidateSubtitle = computed(() => {
+  const item = activeMobileGoodsCandidate.value
+  if (!item) {
+    return ''
+  }
+  return [
+    item.barcode,
+    `${mobileGoodsPrimaryStockLabel.value} ${Number(item.shopQuantity ?? item.sourceStock ?? 0)}`,
+    `${mobileGoodsSecondaryStockLabel.value} ${Number(item.secondaryShopQuantity ?? item.targetStock ?? item.shopQuantity ?? 0)}`,
+    `¥ ${formatMoney(item.price)}`,
+  ].filter(Boolean).join(' · ')
+})
+const mobileGoodsPrimaryStockLabel = computed(() => {
+  if (form.orderType === 'transfer') return '发货库存'
+  if (form.orderType === 'purchase') return '收货库存'
+  return '当前库存'
+})
+const mobileGoodsSecondaryStockLabel = computed(() => {
+  if (form.orderType === 'transfer') return '收货库存'
+  if (form.orderType === 'purchase') return '参考库存'
+  return '总库存'
+})
+const mobileOrderPickerSalespersonOptions = computed(() => {
+  const optionMap = new Map()
+  const shopId = Number(mobileOrderPickerShopId.value || form.sourceShopId || 0) || null
+  getSalespersonOptionsForShop(shopId).forEach((item) => {
+    const value = formatSalespersonValue(item)
+    if (value) {
+      optionMap.set(value, {
+        value,
+        label: formatSalespersonLabel(item),
+      })
+    }
+  })
+  localTestWorkOrderSalesRecords.forEach((item) => {
+    const value = String(item.salesperson || '').trim()
+    if (value && !optionMap.has(value)) {
+      optionMap.set(value, { value, label: value })
+    }
+  })
+  return [...optionMap.values()]
+})
 const selectedAllocationTargets = computed(() => {
   const targetMap = new Map((allocationTargetOptions.value || []).map((item) => [Number(item.id || 0), item]))
   return allocationForm.targetShopIds
@@ -3030,6 +3957,974 @@ const scopeOptions = computed(() => {
   }
   return items
 })
+
+function scopeDisplayLabel(item) {
+  const value = String(item?.value || '')
+  if (!isMobileViewport.value) {
+    return item?.label || ''
+  }
+  return {
+    mine: '我的',
+    pending: '待审',
+    draft: '草稿',
+    approver: '待我审',
+    all: '全部',
+  }[value] || item?.label || ''
+}
+
+function localTestCurrentUserId() {
+  return Number(authStore.user?.id || localTestUserOption.id || 9001) || 9001
+}
+
+function localTestCurrentUserName() {
+  return authStore.displayName || authStore.user?.displayName || authStore.user?.username || localTestUserOption.displayName
+}
+
+function mergeRowsByKey(primary = [], fallback = [], key = 'value') {
+  const rows = Array.isArray(primary) ? [...primary] : []
+  const seen = new Set(rows.map((item) => String(item?.[key] ?? '')).filter(Boolean))
+  for (const item of Array.isArray(fallback) ? fallback : []) {
+    const itemKey = String(item?.[key] ?? '').trim()
+    if (!itemKey || seen.has(itemKey)) {
+      continue
+    }
+    rows.push(item)
+    seen.add(itemKey)
+  }
+  return rows
+}
+
+function ensureLocalTestWorkOrderMeta() {
+  if (!localTestMockWorkOrdersEnabled) {
+    return
+  }
+  meta.categories = mergeRowsByKey(meta.categories, localTestWorkOrderCategories)
+  meta.types = mergeRowsByKey(meta.types, localTestWorkOrderTypes)
+  meta.statuses = mergeRowsByKey(meta.statuses, [
+    { value: 'draft', label: '草稿' },
+    { value: 'pending', label: '待审批' },
+    { value: 'approved', label: '已通过' },
+    { value: 'rejected', label: '未通过' },
+  ])
+  meta.shopOptions = mergeRowsByKey(meta.shopOptions, localTestShopOptions, 'id')
+  meta.storeOptions = mergeRowsByKey(meta.storeOptions, localTestShopOptions.filter((item) => Number(item.shopType) === 0), 'id')
+  meta.warehouseOptions = mergeRowsByKey(meta.warehouseOptions, localTestShopOptions.filter((item) => Number(item.shopType) === 1), 'id')
+  meta.applicantOptions = mergeRowsByKey(meta.applicantOptions, [{
+    ...localTestUserOption,
+    id: localTestCurrentUserId(),
+    username: authStore.user?.username || localTestUserOption.username,
+    displayName: localTestCurrentUserName(),
+  }], 'id')
+  meta.approverOptions = mergeRowsByKey(meta.approverOptions, [{
+    ...localTestUserOption,
+    id: localTestCurrentUserId(),
+    username: authStore.user?.username || localTestUserOption.username,
+    displayName: localTestCurrentUserName(),
+  }], 'id')
+  meta.groups = mergeRowsByKey(meta.groups, [localTestGroupOption], 'id')
+  meta.defaultApproverSettings = mergeRowsByKey(
+    meta.defaultApproverSettings,
+    localTestWorkOrderTypes.map((item) => ({
+      orderType: item.value,
+      orderTypeLabel: item.label,
+      approverId: localTestCurrentUserId(),
+      approverName: localTestCurrentUserName(),
+    })),
+    'orderType',
+  )
+}
+
+function applyLocalTestEditorDefaults(nextType = form.orderType) {
+  if (!localTestMockWorkOrdersEnabled) {
+    return
+  }
+  ensureLocalTestWorkOrderMeta()
+  const source = meta.storeOptions[0] || meta.shopOptions[0] || localTestShopOptions[0]
+  const stockSource = meta.shopOptions.find((item) => Number(item.shopType) !== SHOP_TYPE_OTHER_WAREHOUSE) || source
+  const target = meta.shopOptions.find((item) => Number(item.id) !== Number(stockSource?.id || 0) && Number(item.shopType) !== SHOP_TYPE_OTHER_WAREHOUSE)
+    || localTestShopOptions[1]
+  form.reason = form.reason || `本地测试${findTypeLabel(nextType)}`
+  if (showSourceSelector.value) {
+    form.sourceShopId = form.sourceShopId || Number((isSalesOrderType.value ? source : stockSource)?.id || 0) || null
+  }
+  if (showTargetSelector.value) {
+    form.targetShopId = form.targetShopId || Number(target?.id || 0) || null
+  }
+  if (nextType === 'purchase') {
+    form.supplierName = form.supplierName || '本地测试供货单位'
+  }
+  if (nextType === 'return') {
+    form.partnerName = form.partnerName || '本地测试收货单位'
+  }
+  form.approverId = form.approverId || localTestCurrentUserId()
+  form.groupId = form.groupId || localTestGroupOption.id
+  if (nextType === 'sale' && form.saleAffectsInventory) {
+    saleShipShopId.value = saleShipShopId.value || Number(stockSource?.id || form.sourceShopId || 0) || null
+  }
+}
+
+function cloneLocalMockOrder(order) {
+  return JSON.parse(JSON.stringify(order))
+}
+
+function createLocalMockWorkOrderItem(row, goods, index = 0, preset = {}) {
+  const quantity = Math.max(Number(preset.quantity ?? (index + 1)), 1)
+  const unitPrice = Number(preset.unitPrice ?? goods.price ?? 0)
+  return {
+    id: Number(`${row.id}${index + 1}`),
+    sortIndex: index + 1,
+    lineType: preset.lineType || 'default',
+    saleRecordId: preset.saleRecordId || null,
+    orderNum: preset.orderNum || '',
+    salesperson: preset.salesperson || localTestCurrentUserName(),
+    saleShopId: preset.saleShopId || null,
+    saleShopName: preset.saleShopName || '',
+    receiveShopId: preset.receiveShopId || (row.orderType === 'transfer' ? 9003 : null),
+    receiveShopName: preset.receiveShopName || (row.orderType === 'transfer' ? '本地测试收货仓' : ''),
+    shipShopId: preset.shipShopId || 9002,
+    shipShopName: preset.shipShopName || '本地测试仓库',
+    goodsId: goods.id,
+    goodsName: goods.model || goods.name || '',
+    productCode: goods.productCode || '',
+    brand: goods.brand || '',
+    series: goods.series || '',
+    barcode: goods.barcode || '',
+    unitPrice,
+    quantity,
+    receivedAmount: Number(preset.receivedAmount ?? unitPrice * quantity),
+    receivableAmount: Number(preset.receivableAmount ?? unitPrice * quantity),
+    couponAmount: Number(preset.couponAmount || 0),
+    discountRate: Number(preset.discountRate || 10),
+    totalAmount: unitPrice * quantity,
+    channel: preset.channel || '门店',
+    customerName: preset.customerName || '',
+    remark: preset.remark || '',
+    sourceStock: Number(goods.shopQuantity || 0),
+    targetStock: Number(goods.secondaryShopQuantity || 0),
+  }
+}
+
+function createLocalMockWorkOrderBaseRows() {
+  const userId = localTestCurrentUserId()
+  return [
+    { id: 99001, orderNum: 'LT-WO-DRAFT-001', orderType: 'transfer', reason: '移动端测试调拨草稿', status: 'draft', day: '2026-05-04', applicantId: userId, approverId: userId },
+    { id: 99002, orderNum: 'LT-WO-PENDING-001', orderType: 'transfer', reason: '移动端测试待审批工单', status: 'pending', day: '2026-05-03', applicantId: userId, approverId: userId },
+    { id: 99003, orderNum: 'LT-WO-APPROVED-001', orderType: 'purchase', reason: '移动端测试已通过进货单', status: 'approved', day: '2026-05-02', applicantId: userId, approverId: userId },
+    { id: 99004, orderNum: 'LT-WO-REJECTED-001', orderType: 'sale_return', reason: '移动端测试销售退货驳回单', status: 'rejected', day: '2026-05-01', applicantId: userId, approverId: userId },
+    { id: 99005, orderNum: 'LT-WO-EXCHANGE-001', orderType: 'sale_exchange', reason: '移动端测试销售换货待审批单', status: 'pending', day: '2026-05-05', applicantId: userId, approverId: userId },
+  ]
+}
+
+function decorateLocalMockWorkOrderSummary(row) {
+  const userName = localTestCurrentUserName()
+  const items = Array.isArray(row.items) ? row.items : []
+  return {
+    ...row,
+    orderCategory: resolveOrderCategory(row.orderType),
+    orderCategoryLabel: resolveCategoryLabel(resolveOrderCategory(row.orderType)),
+    orderTypeLabel: findTypeLabel(row.orderType),
+    statusLabel: meta.statuses.find((item) => item.value === row.status)?.label || row.status,
+    formDate: row.formDate || `${row.day} 10:30:00`,
+    applicantName: userName,
+    approverName: userName,
+    groupId: localTestGroupOption.id,
+    groupName: localTestGroupOption.name,
+    itemCount: Math.max(items.length, Number(row.itemCount || 0), 1),
+    totalQuantity: items.reduce((sum, item) => sum + Number(item.quantity || 0), 0) || Number(row.totalQuantity || 1),
+    totalAmount: items.reduce((sum, item) => sum + Number(item.totalAmount || item.receivableAmount || 0), 0) || Number(row.totalAmount || 0),
+    createdAt: `${row.day}T10:30:00`,
+    updatedAt: row.updatedAt || `${row.day}T10:30:00`,
+  }
+}
+
+function buildLocalMockWorkOrderDetail(row) {
+  const summary = decorateLocalMockWorkOrderSummary(row)
+  const firstGoods = localTestWorkOrderGoods[0]
+  const secondGoods = localTestWorkOrderGoods[1]
+  let items = [
+    createLocalMockWorkOrderItem(summary, firstGoods, 0, { quantity: summary.orderType === 'purchase' ? 3 : 1 }),
+  ]
+  if (summary.orderType === 'sale_return') {
+    items = [
+      createLocalMockWorkOrderItem(summary, firstGoods, 0, {
+        saleRecordId: -9901,
+        orderNum: 'LT-SALE-ORDER-001',
+        saleShopId: 9001,
+        saleShopName: '本地测试门店',
+        receiveShopId: 9001,
+        receiveShopName: '本地测试门店',
+        receivedAmount: 1390,
+        receivableAmount: 1490,
+        couponAmount: 100,
+      }),
+    ]
+  } else if (summary.orderType === 'sale_exchange') {
+    items = [
+      createLocalMockWorkOrderItem(summary, firstGoods, 0, {
+        lineType: 'incoming',
+        saleRecordId: -9901,
+        orderNum: 'LT-SALE-ORDER-001',
+        saleShopId: 9001,
+        saleShopName: '本地测试门店',
+      }),
+      createLocalMockWorkOrderItem(summary, secondGoods, 1, {
+        lineType: 'outgoing',
+        shipShopId: 9002,
+        shipShopName: '本地测试仓库',
+      }),
+    ]
+  }
+  return {
+    ...summary,
+    sourceShopId: summary.orderType === 'purchase' ? null : 9002,
+    sourceShopName: summary.orderType === 'purchase' ? '' : '本地测试仓库',
+    targetShopId: summary.orderType === 'return' ? null : 9003,
+    targetShopName: summary.orderType === 'return' ? '' : '本地测试收货仓',
+    supplierName: summary.orderType === 'purchase' ? '本地测试供货单位' : '',
+    partnerName: summary.orderType === 'return' ? '本地测试收货单位' : '',
+    saleAffectsInventory: summary.orderType === 'sale',
+    approvalComment: '',
+    canEdit: ['draft', 'rejected'].includes(String(summary.status)),
+    canReview: String(summary.status) === 'pending',
+    canWithdraw: String(summary.status) === 'pending',
+    canDelete: ['draft', 'rejected', 'pending'].includes(String(summary.status)),
+    canSubmit: ['draft', 'rejected'].includes(String(summary.status)),
+    items,
+  }
+}
+
+function ensureLocalTestWorkOrderState() {
+  if (!localTestMockWorkOrdersEnabled || localTestWorkOrderState.value.length) {
+    return
+  }
+  localTestWorkOrderState.value = createLocalMockWorkOrderBaseRows().map((row) => buildLocalMockWorkOrderDetail(row))
+}
+
+function createLocalMockWorkOrders() {
+  if (!localTestMockWorkOrdersEnabled) {
+    return []
+  }
+  ensureLocalTestWorkOrderState()
+  return localTestWorkOrderState.value.map((row) => decorateLocalMockWorkOrderSummary(row))
+}
+
+function findLocalMockWorkOrderDetail(orderId) {
+  if (!localTestMockWorkOrdersEnabled) {
+    return null
+  }
+  ensureLocalTestWorkOrderState()
+  const matched = localTestWorkOrderState.value.find((row) => Number(row.id || 0) === Number(orderId || 0))
+  return matched ? cloneLocalMockOrder(matched) : null
+}
+
+function upsertLocalMockWorkOrderFromPayload(orderId, payload, statusValue) {
+  ensureLocalTestWorkOrderState()
+  const now = getShanghaiTimestamp()
+  const normalizedId = Number(orderId || 0) || (99000 + localTestWorkOrderState.value.length + 1)
+  const base = {
+    id: normalizedId,
+    orderNum: orderId ? `LT-WO-${normalizedId}` : `LT-WO-NEW-${normalizedId}`,
+    orderType: payload.orderType || 'transfer',
+    reason: payload.reason || `本地测试${findTypeLabel(payload.orderType)}`,
+    status: statusValue || payload.status || 'draft',
+    day: String(payload.formDate || '').slice(0, 10) || '2026-05-05',
+    applicantId: localTestCurrentUserId(),
+    approverId: payload.approverId || localTestCurrentUserId(),
+    formDate: payload.formDate || now,
+    sourceShopId: payload.sourceShopId || null,
+    sourceShopName: displayShopName(sourceOptions.value.find((item) => Number(item.id) === Number(payload.sourceShopId))?.name || ''),
+    targetShopId: payload.targetShopId || null,
+    targetShopName: displayShopName(targetOptions.value.find((item) => Number(item.id) === Number(payload.targetShopId))?.name || ''),
+    supplierName: payload.supplierName || '',
+    partnerName: payload.partnerName || '',
+    saleAffectsInventory: Boolean(payload.saleAffectsInventory),
+    groupId: payload.groupId || localTestGroupOption.id,
+    groupName: localTestGroupOption.name,
+    approvalComment: '',
+    items: (payload.items || []).map((item, index) => ({
+      id: Number(`${normalizedId}${index + 1}`),
+      sortIndex: index + 1,
+      ...item,
+      totalAmount: Number(item.totalAmount || item.receivableAmount || 0),
+    })),
+  }
+  const nextOrder = buildLocalMockWorkOrderDetail(base)
+  nextOrder.items = base.items.length ? base.items : nextOrder.items
+  const index = localTestWorkOrderState.value.findIndex((row) => Number(row.id || 0) === normalizedId)
+  if (index >= 0) {
+    localTestWorkOrderState.value.splice(index, 1, nextOrder)
+  } else {
+    localTestWorkOrderState.value.unshift(nextOrder)
+  }
+  return cloneLocalMockOrder(nextOrder)
+}
+
+function filterLocalMockWorkOrders(rows) {
+  let result = [...rows]
+  if (scope.value === 'draft') {
+    result = result.filter((item) => ['draft', 'rejected'].includes(String(item.status)))
+  } else if (scope.value === 'pending') {
+    result = result.filter((item) => String(item.status) === 'pending' && Number(item.applicantId) === localTestCurrentUserId())
+  } else if (scope.value === 'approver') {
+    result = result.filter((item) => String(item.status) === 'pending' && Number(item.approverId) === localTestCurrentUserId())
+  } else if (scope.value === 'mine') {
+    result = result.filter((item) => Number(item.applicantId) === localTestCurrentUserId())
+  }
+  if (orderTypeFilter.value) {
+    result = result.filter((item) => item.orderType === orderTypeFilter.value)
+  }
+  if (keyword.value) {
+    const key = keyword.value.toLowerCase()
+    result = result.filter((item) => [item.orderNum, item.reason, item.applicantName, item.approverName].some((value) => String(value || '').toLowerCase().includes(key)))
+  }
+  return result
+}
+
+function mobileEditorItemHasContent(item) {
+  if (!item) {
+    return false
+  }
+  return Boolean(
+    Number(item.goodsId || 0)
+    || Number(item.saleRecordId || 0)
+    || String(item.goodsName || '').trim()
+    || String(item.orderNum || '').trim()
+    || String(item.barcode || '').trim()
+    || String(item.brand || '').trim()
+    || String(item.series || '').trim()
+  )
+}
+
+function mobileEditorItemTitle(item) {
+  if (!item) {
+    return '工单明细'
+  }
+  return String(item.goodsName || item.orderNum || '未命名商品').trim()
+}
+
+function mobileEditorItemSubtitle(item) {
+  if (!item) {
+    return ''
+  }
+  if (usesSalesRecordBinding.value || String(item.orderNum || '').trim()) {
+    return [item.salesperson, displayShopName(item.saleShopName)].filter(Boolean).join(' · ') || '销售记录'
+  }
+  return [item.brand, item.series, item.barcode].filter(Boolean).join(' · ') || currentTypeLabel.value
+}
+
+function mobileEditorItemMeta(item) {
+  if (!item) {
+    return ''
+  }
+  const amount = Number(item.totalAmount || item.receivableAmount || 0)
+  if (form.orderType === 'transfer') {
+    return [
+      `发货库存 ${Number(item.sourceStock || 0)}`,
+      `收货库存 ${Number(item.targetStock || 0)}`,
+      `数量 ${Number(item.quantity || 0)}`,
+    ].join(' · ')
+  }
+  return [
+    item.orderNum,
+    `数量 ${Number(item.quantity || 0)}`,
+    amount ? `¥ ${formatMoney(amount)}` : '',
+  ].filter(Boolean).join(' · ')
+}
+
+function mobileEditorItemsForTarget(target = 'default') {
+  void mobileEditorRevision.value
+  return editorRowsForTarget(target).filter((item) => mobileEditorItemHasContent(item))
+}
+
+function mobileEditorItemKey(item) {
+  return [
+    mobileEditorRevision.value,
+    item?.localId,
+    item?.goodsId,
+    item?.saleRecordId,
+    item?.goodsName,
+    item?.orderNum,
+    item?.quantity,
+  ].map((value) => String(value ?? '')).join('|')
+}
+
+function mobileRowUsesSalesRecord(item) {
+  return Boolean(
+    item
+    && (
+      usesSalesRecordBinding.value
+      || String(item.lineType || '') === 'incoming'
+      || String(item.orderNum || '').trim()
+      || Number(item.saleRecordId || 0)
+    )
+  )
+}
+
+function mobileRowShowSalesFields(item) {
+  return Boolean(item && (isSalesOrderType.value || String(item.orderNum || '').trim() || String(item.salesperson || '').trim()))
+}
+
+function mobileRowOrderReadonly(item) {
+  return Boolean(item && (usesSalesRecordBinding.value || String(item.lineType || '') === 'incoming'))
+}
+
+function mobileRowGoodsReadonly(item) {
+  return Boolean(item && mobileRowUsesSalesRecord(item) && !isSaleAffectingInventory.value && String(item.lineType || '') !== 'outgoing')
+}
+
+function mobileRowBarcodeReadonly(item) {
+  return Boolean(item && isSalesOrderType.value && !isSaleAffectingInventory.value && String(item.lineType || '') !== 'outgoing')
+}
+
+function mobileRowSaleShopEditable(item) {
+  return Boolean(item && (isSaleAffectingInventory.value || String(item.lineType || '') === 'outgoing'))
+}
+
+function mobileRowShowReceiveShop(item) {
+  return Boolean(item && (usesReceiveShopColumn.value || String(item.lineType || '') === 'outgoing'))
+}
+
+function mobileRowShowShipShop(item) {
+  return Boolean(item && (isSaleAffectingInventory.value || String(item.lineType || '') === 'outgoing'))
+}
+
+function mobileRowShowTransferStocks(item) {
+  return Boolean(item && (form.orderType === 'transfer' || isSaleAffectingInventory.value || String(item.lineType || '') === 'outgoing'))
+}
+
+function mobileRowShowCoupon(item) {
+  return Boolean(item && (isSaleAffectingInventory.value || String(item.lineType || '') === 'outgoing'))
+}
+
+function mobileRowShowChannel(item) {
+  return Boolean(item && (isSaleAffectingInventory.value || String(item.lineType || '') === 'outgoing'))
+}
+
+function mobileRowShowCustomer(item) {
+  return Boolean(item && (isSaleAffectingInventory.value || String(item.lineType || '') === 'outgoing'))
+}
+
+function moneyDetail(value) {
+  return `¥ ${formatMoney(value)}`
+}
+
+function mobileItemDetailRows(item) {
+  if (!item) {
+    return []
+  }
+  const rows = []
+  const add = (label, value, { show = true, money = false } = {}) => {
+    if (!show) return
+    const text = money ? moneyDetail(value) : String(value ?? '').trim()
+    rows.push({ label, value: text || '-' })
+  }
+  add('订单号', item.orderNum, { show: mobileRowUsesSalesRecord(item) })
+  add('销售店铺', displayShopName(item.saleShopName), { show: mobileRowShowSalesFields(item) })
+  add('收货店铺/仓库', displayShopName(item.receiveShopName), { show: mobileRowShowReceiveShop(item) })
+  add('发货店铺/仓库', displayShopName(item.shipShopName), { show: mobileRowShowShipShop(item) })
+  add('销售员', item.salesperson, { show: mobileRowShowSalesFields(item) })
+  add('商品名称', item.goodsName)
+  add('商品编码', item.productCode)
+  add('品牌', item.brand)
+  add('系列', item.series)
+  add('条码', item.barcode)
+  add('数量', Number(item.quantity || 0))
+  add('单位', '只')
+  add('发货库存', Number(item.sourceStock || 0), { show: mobileRowShowTransferStocks(item) })
+  add('收货库存', Number(item.targetStock || 0), { show: form.orderType === 'transfer' })
+  add('单价', item.unitPrice, { money: true })
+  add(isSalesOrderType.value ? '应付金额' : '金额', item.receivableAmount || item.totalAmount, { money: true })
+  add('实付金额', item.receivedAmount, { show: isSalesOrderType.value, money: true })
+  add('优惠券', item.couponAmount, { show: mobileRowShowCoupon(item), money: true })
+  add('折扣', item.discountRate, { show: isSalesOrderType.value })
+  add('渠道', item.channel, { show: mobileRowShowChannel(item) })
+  add('客户姓名', item.customerName, { show: mobileRowShowCustomer(item) })
+  add('备注', item.remark)
+  return rows
+}
+
+function normalizeMobileGoodsCandidate(item) {
+  if (!item) {
+    return null
+  }
+  return {
+    id: Number(item.id || item.goodsId || 0) || null,
+    name: item.name || item.model || item.goodsModel || item.goodsDisplayName || '',
+    model: item.model || item.goodsModel || item.name || item.goodsDisplayName || '',
+    brand: item.brand || item.goodsBrand || '',
+    series: item.series || item.goodsSeries || '',
+    barcode: item.barcode || item.goodsBarcode || '',
+    price: Number(item.price ?? item.unitPrice ?? 0),
+    shopQuantity: Number(item.shopQuantity ?? item.sourceStock ?? 0),
+    secondaryShopQuantity: Number(item.secondaryShopQuantity ?? item.targetStock ?? item.shopQuantity ?? 0),
+    sourceStock: Number(item.sourceStock ?? item.shopQuantity ?? 0),
+    targetStock: Number(item.targetStock ?? item.secondaryShopQuantity ?? item.shopQuantity ?? 0),
+  }
+}
+
+function filterLocalWorkOrderGoods({ keyword = '', barcode = '' } = {}) {
+  const q = String(keyword || '').trim().toLowerCase()
+  const code = String(barcode || '').trim().toLowerCase()
+  return localTestWorkOrderGoods
+    .filter((item) => {
+      const haystack = [item.brand, item.series, item.model, item.name, item.barcode].join(' ').toLowerCase()
+      if (code && String(item.barcode || '').toLowerCase() !== code) {
+        return false
+      }
+      if (q && !haystack.includes(q)) {
+        return false
+      }
+      return true
+    })
+    .map((item) => normalizeMobileGoodsCandidate(item))
+}
+
+function mobileGoodsSearchResultMeta(item) {
+  if (!item) {
+    return ''
+  }
+  if (form.orderType === 'transfer') {
+    return `发 ${Number(item.shopQuantity ?? item.sourceStock ?? 0)} · 收 ${Number(item.secondaryShopQuantity ?? item.targetStock ?? 0)}`
+  }
+  return `¥ ${formatMoney(item.price)}`
+}
+
+function resetMobileGoodsCandidate() {
+  activeMobileGoodsCandidate.value = null
+  mobileScannerResultText.value = ''
+  mobileGoodsQuantityInput.value = '1'
+  mobileGoodsSearchKeyword.value = ''
+  mobileGoodsSearchResults.value = []
+}
+
+function selectMobileWorkOrderCategory(categoryValue) {
+  const nextCategory = String(categoryValue || 'goods')
+  categoryDraft.category = nextCategory
+  changeOrderType(defaultTypeForCategory(nextCategory))
+}
+
+function goMobileWorkOrderStep(nextStep) {
+  const normalizedStep = Math.min(Math.max(Number(nextStep || 1), 1), mobileWorkOrderStepOptions.length)
+  if (normalizedStep > 3 && !validateStepOne()) {
+    return
+  }
+  mobileWorkOrderTransitionName.value = normalizedStep >= mobileWorkOrderStep.value
+    ? 'mobile-work-order-step-next'
+    : 'mobile-work-order-step-prev'
+  mobileWorkOrderStep.value = normalizedStep
+}
+
+async function handleMobileWorkOrderBack() {
+  if (mobileWorkOrderStep.value > 1) {
+    goMobileWorkOrderStep(mobileWorkOrderStep.value - 1)
+    return
+  }
+  requestCloseEditor()
+}
+
+function openMobileOrderActions(row) {
+  activeMobileOrder.value = row || null
+  mobileOrderActionVisible.value = Boolean(row)
+}
+
+function closeMobileOrderActions() {
+  mobileOrderActionVisible.value = false
+}
+
+function openMobileOrderDetail() {
+  const row = activeMobileOrder.value
+  closeMobileOrderActions()
+  if (row?.id) {
+    openDetail(row.id)
+  }
+}
+
+function allocateMobileOrder() {
+  const row = activeMobileOrder.value
+  closeMobileOrderActions()
+  if (row?.id) {
+    openAllocationDialog(row.id)
+  }
+}
+
+function editMobileOrder() {
+  const row = activeMobileOrder.value
+  closeMobileOrderActions()
+  if (row?.id) {
+    openEditDialog(row.id)
+  }
+}
+
+function withdrawMobileOrder() {
+  const row = activeMobileOrder.value
+  closeMobileOrderActions()
+  if (row?.id) {
+    confirmWithdrawOrder(row)
+  }
+}
+
+function deleteMobileOrder() {
+  const row = activeMobileOrder.value
+  closeMobileOrderActions()
+  if (row?.id) {
+    confirmDeleteOrder(row)
+  }
+}
+
+function reviewMobileOrder() {
+  const row = activeMobileOrder.value
+  closeMobileOrderActions()
+  if (row?.id) {
+    openDetail(row.id, true)
+  }
+}
+
+function printMobileOrder() {
+  const row = activeMobileOrder.value
+  closeMobileOrderActions()
+  if (row?.id) {
+    printById(row.id)
+  }
+}
+
+async function loadMobileGoodsSearchResults() {
+  const keywordValue = String(mobileGoodsSearchKeyword.value || '').trim()
+  if (!keywordValue) {
+    mobileGoodsSearchResults.value = []
+    mobileGoodsSearchLoading.value = false
+    return
+  }
+  mobileGoodsSearchLoading.value = true
+  let rows = []
+  if (localTestMockWorkOrdersEnabled) {
+    rows = filterLocalWorkOrderGoods({ keyword: keywordValue })
+  } else {
+    try {
+      const payload = await apiGet('/goods/items', {
+        token: authStore.token,
+        query: {
+          keyword: keywordValue || undefined,
+          q: keywordValue || undefined,
+          catalog_only: 'false',
+          distribution_shop_id: goodsPickerDistributionShopId.value || undefined,
+          page: 1,
+          page_size: 12,
+        },
+      })
+      if (payload?.success) {
+        rows = payload.items || payload.goods || payload.rows || []
+      }
+    } catch {
+      rows = []
+    }
+    if (!rows.length) {
+      rows = filterLocalWorkOrderGoods({ keyword: keywordValue })
+    }
+  }
+  mobileGoodsSearchResults.value = rows.map((item) => normalizeMobileGoodsCandidate(item)).filter(Boolean)
+  mobileGoodsSearchLoading.value = false
+}
+
+function onMobileGoodsSearchInput() {
+  if (String(mobileGoodsSearchKeyword.value || '').trim()) {
+    activeMobileGoodsCandidate.value = null
+  }
+  void loadMobileGoodsSearchResults()
+}
+
+async function openMobileGoodsSearchEntry(target = 'default') {
+  mobileGoodsEntryTarget.value = target
+  currentBatchTarget.value = target
+  mobileGoodsEntryMode.value = 'search'
+  mobileGoodsEntryVisible.value = true
+  mobileGoodsSearchKeyword.value = ''
+  resetMobileGoodsCandidate()
+  await nextTick()
+  mobileGoodsSearchInputRef.value?.focus?.()
+}
+
+async function openMobileGoodsScannerEntry(target = 'default') {
+  mobileGoodsEntryTarget.value = target
+  currentBatchTarget.value = target
+  mobileGoodsEntryMode.value = 'scanner'
+  mobileGoodsEntryVisible.value = true
+  resetMobileGoodsCandidate()
+  await nextTick()
+  await startMobileScanner()
+}
+
+async function closeMobileGoodsEntry() {
+  await stopMobileScanner()
+}
+
+async function onMobileScannerStageFocus(event) {
+  await focusMobileScannerAt(event)
+}
+
+async function resolveMobileGoodsBarcode(code) {
+  const normalizedCode = String(code || '').trim()
+  if (!normalizedCode) {
+    return
+  }
+  let matched = filterLocalWorkOrderGoods({ barcode: normalizedCode })[0] || null
+  if (!matched && !localTestMockWorkOrdersEnabled) {
+    try {
+      const payload = await apiGet(`/goods/barcode/${encodeURIComponent(normalizedCode)}`, {
+        token: authStore.token,
+        query: {
+          catalog_only: 'false',
+          distribution_shop_id: goodsPickerDistributionShopId.value || undefined,
+        },
+      })
+      if (payload?.success) {
+        matched = normalizeMobileGoodsCandidate(payload.item || payload.goods)
+      }
+    } catch {
+      matched = null
+    }
+  }
+  if (!matched) {
+    ElMessage.warning('未找到匹配商品，可改用搜索型号录入')
+    return
+  }
+  selectMobileGoodsCandidate(matched)
+}
+
+function selectMobileGoodsCandidate(item) {
+  const normalized = normalizeMobileGoodsCandidate(item)
+  if (!normalized) {
+    return
+  }
+  activeMobileGoodsCandidate.value = normalized
+  mobileScannerResultText.value = normalized.barcode || mobileScannerResultText.value
+  mobileGoodsQuantityInput.value = '1'
+  mobileGoodsSearchKeyword.value = ''
+  mobileGoodsSearchResults.value = []
+}
+
+function onMobileGoodsQuantityInput(value) {
+  const normalized = Math.max(Number.parseInt(String(value || '1').replace(/[^\d]/g, ''), 10) || 1, 1)
+  mobileGoodsQuantityInput.value = String(normalized)
+}
+
+function findReusableMobileEditorRow(target = 'default') {
+  const rows = editorRowsForTarget(target)
+  let row = rows.find((item) => !mobileEditorItemHasContent(item))
+  if (!row) {
+    row = createRow({ lineType: target === 'default' ? 'default' : target })
+    rows.push(row)
+  }
+  return row
+}
+
+function removeMobilePlaceholderRowsForTarget(target = 'default') {
+  const rows = editorRowsForTarget(target)
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    if (!mobileEditorItemHasContent(rows[index])) {
+      rows.splice(index, 1)
+    }
+  }
+}
+
+function createMobileEditorEntryRow(target = 'default') {
+  removeMobilePlaceholderRowsForTarget(target)
+  const rows = editorRowsForTarget(target)
+  const row = createRow({ lineType: target === 'default' ? 'default' : target })
+  rows.push(row)
+  if (target === 'default') {
+    editorItemsPage.value = 1
+    normalizeEditorItemsPage()
+  }
+  return row
+}
+
+async function confirmMobileGoodsCandidate() {
+  const candidate = activeMobileGoodsCandidate.value
+  if (!candidate) {
+    ElMessage.warning('请先选择商品')
+    return
+  }
+  const target = mobileGoodsEntryTarget.value || 'default'
+  const row = createMobileEditorEntryRow(target)
+  const quantity = Math.max(Number(mobileGoodsQuantityInput.value || 1), 1)
+  fillRowFromGoods(row, await enrichGoodsWithStocks({
+    ...candidate,
+    quantity,
+    sourceStock: Number(candidate.shopQuantity ?? candidate.sourceStock ?? 0),
+    targetStock: Number(candidate.secondaryShopQuantity ?? candidate.targetStock ?? candidate.shopQuantity ?? 0),
+  }))
+  row.quantity = quantity
+  if (isSaleAffectingInventory.value || target === 'outgoing') {
+    row.saleShopId = row.saleShopId || Number(form.sourceShopId || 0) || null
+    row.saleShopName = row.saleShopName || sourceDisplayName.value || ''
+    row.receiveShopId = row.receiveShopId || row.saleShopId || Number(form.sourceShopId || 0) || null
+    row.receiveShopName = row.receiveShopName || row.saleShopName || sourceDisplayName.value || ''
+    row.shipShopId = row.shipShopId || Number(saleShipShopId.value || form.sourceShopId || 0) || null
+    row.shipShopName = row.shipShopName || saleShipDisplayName.value || sourceDisplayName.value || ''
+    row.salesperson = row.salesperson || String(form.exchangeIncomingItems[0]?.salesperson || applicantName.value || '')
+    row.channel = row.channel || '门店'
+  }
+  syncRowAmount(row)
+  refreshMobileEditorRowsForTarget(target)
+  mobileGoodsEntryVisible.value = false
+  await closeMobileGoodsEntry()
+  resetMobileGoodsCandidate()
+  await nextTick()
+}
+
+function normalizeMobileOrderRecord(row) {
+  if (!row) {
+    return null
+  }
+  return {
+    ...row,
+    id: Number(row.id || row.saleRecordId || 0) || null,
+    orderNum: row.orderNum || '',
+    soldAt: row.soldAt || row.createdAt || '',
+    salesperson: row.salesperson || applicantName.value,
+    shopId: Number(row.shopId || row.saleShopId || form.sourceShopId || 0) || null,
+    shopName: row.shopName || row.saleShopName || sourceDisplayName.value || '',
+    shipShopId: Number(row.shipShopId || 0) || null,
+    shipShopName: row.shipShopName || '',
+    goodsId: Number(row.goodsId || 0) || null,
+    goodsModel: row.goodsModel || row.goodsDisplayName || row.goodsName || '',
+    goodsDisplayName: row.goodsDisplayName || row.goodsModel || row.goodsName || '',
+    goodsBrand: row.goodsBrand || row.brand || '',
+    goodsSeries: row.goodsSeries || row.series || '',
+    goodsBarcode: row.goodsBarcode || row.barcode || '',
+    unitPrice: Number(row.unitPrice || row.price || 0),
+    quantity: Math.max(Number(row.quantity || 1), 1),
+    receivableAmount: Number(row.receivableAmount || row.totalAmount || 0),
+    receivedAmount: Number(row.receivedAmount || row.receivableAmount || row.totalAmount || 0),
+    couponAmount: Number(row.couponAmount || 0),
+    discountRate: Number(row.discountRate || 10),
+    channel: row.channel || '门店',
+  }
+}
+
+async function loadMobileOrderPickerRows() {
+  mobileOrderPickerLoading.value = true
+  let rows = []
+  const pickerShopId = Number(mobileOrderPickerShopId.value || form.sourceShopId || 0) || null
+  const pickerSalesperson = String(mobileOrderPickerSalesperson.value || '').trim()
+  const [dateFrom, dateTo] = Array.isArray(mobileOrderPickerDateRange.value) ? mobileOrderPickerDateRange.value : []
+  if (localTestMockWorkOrdersEnabled) {
+    rows = localTestWorkOrderSalesRecords
+  } else {
+    try {
+      const payload = await apiGet('/sales/records', {
+        token: authStore.token,
+        query: {
+          page: 1,
+          page_size: 20,
+          shop_id: pickerShopId || undefined,
+          salesperson: pickerSalesperson || undefined,
+          date_from: dateFrom || undefined,
+          date_to: dateTo || undefined,
+          sale_kind: 'goods',
+        },
+      })
+      if (payload?.success) {
+        rows = payload.records || payload.items || payload.rows || []
+      }
+    } catch {
+      rows = []
+    }
+    if (!rows.length) {
+      rows = localTestWorkOrderSalesRecords
+    }
+  }
+  mobileOrderPickerRows.value = rows
+    .map((item) => normalizeMobileOrderRecord(item))
+    .filter(Boolean)
+    .filter((item) => !pickerShopId || Number(item.shopId || 0) === pickerShopId || (localTestMockWorkOrdersEnabled && Number(item.shopId || 0) === 9001))
+    .filter((item) => !pickerSalesperson || String(item.salesperson || '').trim() === pickerSalesperson)
+    .filter((item) => {
+      const soldDate = String(item.soldAt || '').slice(0, 10)
+      if (dateFrom && soldDate < dateFrom) return false
+      if (dateTo && soldDate > dateTo) return false
+      return true
+    })
+  mobileOrderPickerLoading.value = false
+}
+
+async function openMobileOrderPicker(target = 'default') {
+  if (!Number(form.sourceShopId || 0)) {
+    applyLocalTestEditorDefaults(form.orderType)
+  }
+  if (!Number(form.sourceShopId || 0)) {
+    ElMessage.warning('请先选择销售店铺，再录入订单')
+    return
+  }
+  mobileOrderPickerTarget.value = target
+  currentBatchTarget.value = target
+  mobileOrderPickerShopId.value = Number(form.sourceShopId || 0) || null
+  mobileOrderPickerSalesperson.value = ''
+  mobileOrderPickerDateRange.value = []
+  mobileOrderPickerVisible.value = true
+  await loadMobileOrderPickerRows()
+}
+
+function selectMobileOrderRecord(record) {
+  const normalized = normalizeMobileOrderRecord(record)
+  if (!normalized) {
+    return
+  }
+  const target = mobileOrderPickerTarget.value || 'default'
+  const row = createMobileEditorEntryRow(target)
+  fillRowFromSaleRecord(row, normalized, Math.max(Number(normalized.quantity || 1), 1))
+  if (isSaleExchangeType.value) {
+    form.exchangeOutgoingItems.forEach((item) => {
+      if (!String(item.salesperson || '').trim()) {
+        item.salesperson = row.salesperson || applicantName.value || ''
+      }
+      ensureRowSalespersonByShop(item)
+    })
+  }
+  refreshMobileEditorRowsForTarget(target)
+  mobileOrderPickerVisible.value = false
+}
+
+function openMobileItemActions(item) {
+  activeMobileItem.value = item || null
+  mobileItemActionVisible.value = Boolean(item)
+}
+
+function editMobileItem() {
+  const item = activeMobileItem.value
+  mobileItemActionVisible.value = false
+  if (!item) {
+    return
+  }
+  mobileItemEditVisible.value = true
+}
+
+function finishMobileItemEdit() {
+  if (activeMobileItem.value) {
+    syncRowAmount(activeMobileItem.value)
+    refreshMobileEditorRowsForTarget(resolveEditorTargetByRow(activeMobileItem.value))
+  }
+  mobileItemEditVisible.value = false
+}
+
+async function deleteMobileItem() {
+  const item = activeMobileItem.value
+  mobileItemActionVisible.value = false
+  if (item?.localId) {
+    await confirmRemoveItemRow(item.localId)
+    refreshMobileEditorRowsForTarget(resolveEditorTargetByRow(item))
+  }
+}
+
+async function confirmMobileSaveEditor(statusValue) {
+  const actionText = statusValue === 'pending' ? '提交审批' : '保存草稿'
+  try {
+    await confirmAction(`确认${actionText}当前工单吗？`, actionText, actionText)
+  } catch {
+    return
+  }
+  await saveEditor(statusValue)
+}
 
 function defaultDateTimeLocal() {
   return getShanghaiDateTimeLocalValue()
@@ -4506,7 +6401,7 @@ async function enrichGoodsWithStocks(goods) {
   const targetId = Number(form.targetShopId || 0)
   const sourceStock = Number(goods.sourceStock ?? goods.shopQuantity ?? 0)
   const targetStock = Number(goods.targetStock ?? goods.secondaryShopQuantity ?? goods.shopQuantity ?? 0)
-  if ((sourceId || targetId) && goods.id) {
+  if ((sourceId || targetId) && Number(goods.id || 0) > 0) {
     const snapshot = await loadGoodsInventorySnapshot(goods.id, { force: true })
     return {
       ...goods,
@@ -5184,6 +7079,24 @@ function editorRowsForTarget(target = 'default') {
   return form.items
 }
 
+function replaceEditorRowsForTarget(target = 'default', rows = []) {
+  if (target === 'incoming') {
+    form.exchangeIncomingItems = rows
+    return
+  }
+  if (target === 'outgoing') {
+    form.exchangeOutgoingItems = rows
+    return
+  }
+  form.items = rows
+}
+
+function refreshMobileEditorRowsForTarget(target = 'default') {
+  replaceEditorRowsForTarget(target, [...editorRowsForTarget(target)])
+  normalizeEditorItemsPage()
+  mobileEditorRevision.value += 1
+}
+
 function addItemRows(count = 1, target = 'default') {
   const safeCount = Math.min(Math.max(Number(count || 1), 1), 50)
   const rows = editorRowsForTarget(target)
@@ -5348,6 +7261,7 @@ async function onSaleHeaderShipShopChange(value) {
 }
 
 function changeOrderType(nextType) {
+  ensureLocalTestWorkOrderMeta()
   resetQuickAddBar()
   const previousType = form.orderType
   const previousDefaultApproverId = resolveDefaultApproverId(previousType)
@@ -5378,9 +7292,11 @@ function changeOrderType(nextType) {
     item.isNewGoods = false
     syncRowAmount(item)
   })
+  applyLocalTestEditorDefaults(nextType)
 }
 
 function resetForm(nextType = 'transfer') {
+  ensureLocalTestWorkOrderMeta()
   resetQuickAddBar()
   form.id = null
   form.orderNum = ''
@@ -5408,6 +7324,7 @@ function resetForm(nextType = 'transfer') {
   categoryDraft.category = resolveOrderCategory(nextType)
   normalizeFormByType(nextType)
   applyDefaultApproverToForm(nextType, { force: true })
+  applyLocalTestEditorDefaults(nextType)
 }
 
 function buildPayload(statusValue) {
@@ -5669,23 +7586,29 @@ function resolveOrderQuery() {
 }
 
 async function loadMeta() {
-  const payload = await apiGet('/work-orders/meta', {
-    token: authStore.token,
-  })
-  if (!payload?.success) {
+  let payload = null
+  try {
+    payload = await apiGet('/work-orders/meta', {
+      token: authStore.token,
+    })
+  } catch {
+    payload = null
+  }
+  if (!payload?.success && !localTestMockWorkOrdersEnabled) {
     return
   }
-  meta.categories = payload.categories || []
-  meta.types = payload.types || []
-  meta.statuses = payload.statuses || []
-  meta.shopOptions = payload.shopOptions || []
-  meta.storeOptions = payload.storeOptions || []
-  meta.warehouseOptions = payload.warehouseOptions || []
-  meta.otherWarehouseOptions = payload.otherWarehouseOptions || []
-  meta.applicantOptions = payload.applicantOptions || []
-  meta.approverOptions = payload.approverOptions || []
-  meta.groups = payload.groups || []
-  meta.defaultApproverSettings = payload.defaultApproverSettings || []
+  meta.categories = payload?.categories || []
+  meta.types = payload?.types || []
+  meta.statuses = payload?.statuses || []
+  meta.shopOptions = payload?.shopOptions || []
+  meta.storeOptions = payload?.storeOptions || []
+  meta.warehouseOptions = payload?.warehouseOptions || []
+  meta.otherWarehouseOptions = payload?.otherWarehouseOptions || []
+  meta.applicantOptions = payload?.applicantOptions || []
+  meta.approverOptions = payload?.approverOptions || []
+  meta.groups = payload?.groups || []
+  meta.defaultApproverSettings = payload?.defaultApproverSettings || []
+  ensureLocalTestWorkOrderMeta()
   if (!form.groupId && defaultGroupId.value) {
     form.groupId = defaultGroupId.value
   }
@@ -5713,10 +7636,23 @@ async function loadGoodsAutocompleteMeta() {
 }
 
 async function loadDashboard() {
-  const payload = await apiGet('/work-orders/dashboard', {
-    token: authStore.token,
-  })
+  let payload = null
+  try {
+    payload = await apiGet('/work-orders/dashboard', {
+      token: authStore.token,
+    })
+  } catch {
+    payload = null
+  }
   if (!payload?.success) {
+    if (localTestMockWorkOrdersEnabled) {
+      const rows = createLocalMockWorkOrders()
+      dashboard.draftCount = rows.filter((item) => ['draft', 'rejected'].includes(String(item.status))).length
+      dashboard.pendingCount = rows.filter((item) => String(item.status) === 'pending').length
+      dashboard.approvalCount = rows.filter((item) => String(item.status) === 'pending').length
+      dashboard.recentMine = rows.slice(0, 3)
+      dashboard.pendingApprovals = rows.filter((item) => String(item.status) === 'pending').slice(0, 3)
+    }
     return
   }
   dashboard.draftCount = Number(payload.draftCount || 0)
@@ -5724,6 +7660,14 @@ async function loadDashboard() {
   dashboard.approvalCount = Number(payload.approvalCount || 0)
   dashboard.recentMine = payload.recentMine || []
   dashboard.pendingApprovals = payload.pendingApprovals || []
+  if (localTestMockWorkOrdersEnabled && !dashboard.recentMine.length && !dashboard.pendingApprovals.length) {
+    const rows = createLocalMockWorkOrders()
+    dashboard.draftCount = Math.max(dashboard.draftCount, rows.filter((item) => ['draft', 'rejected'].includes(String(item.status))).length)
+    dashboard.pendingCount = Math.max(dashboard.pendingCount, rows.filter((item) => String(item.status) === 'pending').length)
+    dashboard.approvalCount = Math.max(dashboard.approvalCount, rows.filter((item) => String(item.status) === 'pending').length)
+    dashboard.recentMine = rows.slice(0, 3)
+    dashboard.pendingApprovals = rows.filter((item) => String(item.status) === 'pending').slice(0, 3)
+  }
 }
 
 async function loadWorkOrderSettings() {
@@ -5745,29 +7689,40 @@ async function loadWorkOrderSettings() {
 async function loadOrders() {
   loading.value = true
   const query = resolveOrderQuery()
-  const payload = await apiGet('/work-orders', {
-    token: authStore.token,
-    query: {
-      page: page.value,
-      page_size: pageSize.value,
-      scope: query.scope,
-      order_type: orderTypeFilter.value || undefined,
-      status: query.status,
-      keyword: keyword.value || undefined,
-      date_start: query.dateStart,
-      date_end: query.dateEnd,
-      applicant_id: query.applicantId,
-      approver_id: query.approverId,
-    },
-  })
+  let payload = null
+  try {
+    payload = await apiGet('/work-orders', {
+      token: authStore.token,
+      query: {
+        page: page.value,
+        page_size: pageSize.value,
+        scope: query.scope,
+        order_type: orderTypeFilter.value || undefined,
+        status: query.status,
+        keyword: keyword.value || undefined,
+        date_start: query.dateStart,
+        date_end: query.dateEnd,
+        applicant_id: query.applicantId,
+        approver_id: query.approverId,
+      },
+    })
+  } catch {
+    payload = null
+  }
   loading.value = false
   if (!payload?.success) {
-    orders.value = []
-    total.value = 0
+    const mockRows = filterLocalMockWorkOrders(createLocalMockWorkOrders())
+    orders.value = mockRows
+    total.value = mockRows.length
     return
   }
   orders.value = payload.orders || []
   total.value = Number(payload.total || 0)
+  if (localTestMockWorkOrdersEnabled && !orders.value.length) {
+    const mockRows = filterLocalMockWorkOrders(createLocalMockWorkOrders())
+    orders.value = mockRows
+    total.value = mockRows.length
+  }
 }
 
 async function loadLogs() {
@@ -6039,12 +7994,24 @@ async function confirmInventoryWarningsBeforeProceed(
 }
 
 function openCreateDialog(nextType = 'transfer') {
+  updateViewport()
   if (!canWrite.value) {
     ElMessage.warning('当前账号没有创建工单权限')
     return
   }
+  ensureLocalTestWorkOrderMeta()
   const nextCategory = resolveOrderCategory(nextType)
   categoryDraft.category = nextCategory
+  if (isMobileViewport.value) {
+    categoryDialogVisible.value = false
+    mobileEditorSessionActive.value = true
+    resetForm(defaultTypeForCategory(nextCategory))
+    mobileWorkOrderStep.value = 1
+    mobileWorkOrderTransitionName.value = 'mobile-work-order-step-next'
+    editorVisible.value = true
+    captureEditorSnapshot()
+    return
+  }
   categoryDialogVisible.value = true
 }
 
@@ -6054,6 +8021,9 @@ function openCreateDialogByCategory(categoryValue) {
   categoryDraft.category = targetCategory
   resetForm(nextType)
   categoryDialogVisible.value = false
+  mobileEditorSessionActive.value = isMobileViewport.value
+  mobileWorkOrderStep.value = isMobileViewport.value ? 2 : 1
+  mobileWorkOrderTransitionName.value = 'mobile-work-order-step-next'
   editorVisible.value = true
   captureEditorSnapshot()
 }
@@ -6390,15 +8360,29 @@ async function openEditDialog(orderId) {
   }
   detailVisible.value = false
   detailLoading.value = true
-  const payload = await apiGet(`/work-orders/${orderId}`, {
-    token: authStore.token,
-  })
+  let payload = null
+  try {
+    payload = await apiGet(`/work-orders/${orderId}`, {
+      token: authStore.token,
+    })
+  } catch {
+    payload = null
+  }
+  if ((!payload?.success || !payload.order) && localTestMockWorkOrdersEnabled) {
+    const localOrder = findLocalMockWorkOrderDetail(orderId)
+    if (localOrder) {
+      payload = { success: true, order: localOrder }
+    }
+  }
   detailLoading.value = false
   if (!payload?.success || !payload.order) {
     ElMessage.error(payload?.message || '工单详情获取失败')
     return
   }
   applyOrderToForm(payload.order)
+  mobileEditorSessionActive.value = isMobileViewport.value
+  mobileWorkOrderStep.value = isMobileViewport.value ? 3 : 1
+  mobileWorkOrderTransitionName.value = 'mobile-work-order-step-next'
   editorVisible.value = true
   captureEditorSnapshot()
 }
@@ -6411,9 +8395,20 @@ async function openDetail(orderId, focusReview = false) {
   detailSortState.prop = ''
   detailSortState.order = ''
   reviewComment.value = ''
-  const payload = await apiGet(`/work-orders/${orderId}`, {
-    token: authStore.token,
-  })
+  let payload = null
+  try {
+    payload = await apiGet(`/work-orders/${orderId}`, {
+      token: authStore.token,
+    })
+  } catch {
+    payload = null
+  }
+  if ((!payload?.success || !payload.order) && localTestMockWorkOrdersEnabled) {
+    const localOrder = findLocalMockWorkOrderDetail(orderId)
+    if (localOrder) {
+      payload = { success: true, order: localOrder }
+    }
+  }
   detailLoading.value = false
   if (!payload?.success || !payload.order) {
     detailVisible.value = false
@@ -6440,6 +8435,7 @@ async function requestCloseEditor(done) {
     }
   }
   editorVisible.value = false
+  mobileEditorSessionActive.value = false
   done?.()
 }
 
@@ -6573,9 +8569,13 @@ async function applyWorkOrderStateFromRoute() {
 
   if (shouldCompose) {
     const nextCategory = resolveOrderCategory(composeType)
-    openCreateDialogByCategory(nextCategory)
-    changeOrderType(composeType)
-    await applyComposePrefillFromRoute(composeType)
+    if (isMobileViewport.value && !hasComposePrefill) {
+      openCreateDialog(composeType)
+    } else {
+      openCreateDialogByCategory(nextCategory)
+      changeOrderType(composeType)
+      await applyComposePrefillFromRoute(composeType)
+    }
     captureEditorSnapshot()
   }
 
@@ -6623,13 +8623,25 @@ async function saveEditor(statusValue) {
   } else {
     submitting.value = true
   }
-  const result = form.id
-    ? await apiPut(`/work-orders/${form.id}`, payload, { token: authStore.token })
-    : await apiPost('/work-orders', payload, { token: authStore.token })
+  let result = null
+  try {
+    result = form.id
+      ? await apiPut(`/work-orders/${form.id}`, payload, { token: authStore.token })
+      : await apiPost('/work-orders', payload, { token: authStore.token })
+  } catch {
+    result = null
+  }
   if (statusValue === 'draft') {
     savingDraft.value = false
   } else {
     submitting.value = false
+  }
+  if ((!result?.success || !result.order) && localTestMockWorkOrdersEnabled) {
+    result = {
+      success: true,
+      message: statusValue === 'draft' ? '本地测试草稿已保存' : '本地测试工单已提交审批',
+      order: upsertLocalMockWorkOrderFromPayload(form.id, payload, statusValue),
+    }
   }
   if (!result?.success || !result.order) {
     ElMessage.error(result?.message || '工单保存失败')
@@ -6638,6 +8650,7 @@ async function saveEditor(statusValue) {
   ElMessage.success(result.message || '工单已保存')
   captureEditorSnapshot()
   editorVisible.value = false
+  mobileEditorSessionActive.value = false
   detailOrder.value = normalizePersistedOrderDetail(result.order)
   detailItemsPage.value = 1
   detailSortState.prop = ''
@@ -6700,7 +8713,31 @@ async function confirmWithdrawOrder(row) {
   } catch {
     return
   }
-  const result = await apiPost(`/work-orders/${row.id}/withdraw`, {}, { token: authStore.token })
+  let result = null
+  try {
+    result = await apiPost(`/work-orders/${row.id}/withdraw`, {}, { token: authStore.token })
+  } catch {
+    result = null
+  }
+  if ((!result?.success || !result.order) && localTestMockWorkOrdersEnabled) {
+    const localOrder = findLocalMockWorkOrderDetail(row.id)
+    if (localOrder) {
+      const nextOrder = {
+        ...localOrder,
+        status: 'draft',
+        statusLabel: '草稿',
+        canEdit: true,
+        canReview: false,
+        canWithdraw: false,
+        updatedAt: getShanghaiTimestamp(),
+      }
+      const index = localTestWorkOrderState.value.findIndex((item) => Number(item.id || 0) === Number(nextOrder.id || 0))
+      if (index >= 0) {
+        localTestWorkOrderState.value.splice(index, 1, nextOrder)
+      }
+      result = { success: true, message: '本地测试工单已转回草稿箱', order: cloneLocalMockOrder(nextOrder) }
+    }
+  }
   if (!result?.success || !result.order) {
     ElMessage.error(result?.message || '工单转草稿失败')
     return
@@ -6723,7 +8760,19 @@ async function confirmDeleteOrder(row) {
   } catch {
     return
   }
-  const result = await apiDelete(`/work-orders/${row.id}`, { token: authStore.token })
+  let result = null
+  try {
+    result = await apiDelete(`/work-orders/${row.id}`, { token: authStore.token })
+  } catch {
+    result = null
+  }
+  if (!result?.success && localTestMockWorkOrdersEnabled) {
+    const index = localTestWorkOrderState.value.findIndex((item) => Number(item.id || 0) === Number(row.id || 0))
+    if (index >= 0) {
+      localTestWorkOrderState.value.splice(index, 1)
+      result = { success: true, message: '本地测试工单已删除' }
+    }
+  }
   if (!result?.success) {
     ElMessage.error(result?.message || '工单删除失败')
     return
@@ -6757,15 +8806,40 @@ async function reviewCurrent(approved) {
     return
   }
   reviewing.value = true
-  const payload = await apiPost(
-    `/work-orders/${detailOrder.value.id}/review`,
-    {
-      approved,
-      comment: reviewComment.value || '',
-    },
-    { token: authStore.token },
-  )
+  let payload = null
+  try {
+    payload = await apiPost(
+      `/work-orders/${detailOrder.value.id}/review`,
+      {
+        approved,
+        comment: reviewComment.value || '',
+      },
+      { token: authStore.token },
+    )
+  } catch {
+    payload = null
+  }
   reviewing.value = false
+  if ((!payload?.success || !payload.order) && localTestMockWorkOrdersEnabled) {
+    const localOrder = findLocalMockWorkOrderDetail(detailOrder.value.id)
+    if (localOrder) {
+      const nextOrder = {
+        ...localOrder,
+        status: approved ? 'approved' : 'rejected',
+        statusLabel: approved ? '已通过' : '未通过',
+        approvalComment: reviewComment.value || '',
+        canReview: false,
+        canEdit: !approved,
+        canWithdraw: false,
+        updatedAt: getShanghaiTimestamp(),
+      }
+      const index = localTestWorkOrderState.value.findIndex((row) => Number(row.id || 0) === Number(nextOrder.id || 0))
+      if (index >= 0) {
+        localTestWorkOrderState.value.splice(index, 1, nextOrder)
+      }
+      payload = { success: true, message: approved ? '本地测试工单已通过' : '本地测试工单已驳回', order: cloneLocalMockOrder(nextOrder) }
+    }
+  }
   if (!payload?.success || !payload.order) {
     ElMessage.error(payload?.message || '工单审批失败')
     return

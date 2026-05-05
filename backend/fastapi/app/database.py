@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import and_, create_engine, inspect, or_, select, text
@@ -20,6 +21,9 @@ from .models import (
     AqcUser,
     AqcUserIdentity,
     AqcUserRole,
+    AqcWorkOrder,
+    AqcWorkOrderAction,
+    AqcWorkOrderItem,
     AqcWorkOrderSchedule,
     AqcWorkOrderSetting,
     Base,
@@ -996,6 +1000,137 @@ def _ensure_work_order_settings(db: Session) -> None:
             row.approver_name = transfer_approver_name
 
 
+def _ensure_local_test_work_orders(db: Session, admin: AqcUser | None) -> None:
+    if not settings.enable_local_login or admin is None:
+        return
+    existing_seed = db.execute(
+        select(AqcWorkOrder.id).where(AqcWorkOrder.order_num.like("LT-WO-%")).limit(1)
+    ).scalar()
+    if existing_seed is not None:
+        return
+
+    shop_rows = (
+        db.execute(
+            select(AqcShop)
+            .where(AqcShop.is_enabled.is_(True))
+            .order_by(AqcShop.id.asc())
+            .limit(2)
+        )
+        .scalars()
+        .all()
+    )
+    while len(shop_rows) < 2:
+        shop = AqcShop(
+            name=f"本地测试{'店铺' if len(shop_rows) == 0 else '仓库'}",
+            shop_type=0 if len(shop_rows) == 0 else 1,
+            is_enabled=True,
+            status=1,
+            created_by=int(admin.id),
+        )
+        db.add(shop)
+        db.flush()
+        shop_rows.append(shop)
+
+    source_shop, target_shop = shop_rows[0], shop_rows[1]
+    applicant_name = _display_name(admin)
+    now = datetime.utcnow().replace(microsecond=0)
+    seeds = [
+        {
+            "order_num": "LT-WO-DRAFT-001",
+            "order_type": "transfer",
+            "status": "draft",
+            "reason": "移动端测试调拨草稿",
+            "source": source_shop,
+            "target": target_shop,
+            "action": "saved",
+            "item": "AQC 测试商品 5600",
+        },
+        {
+            "order_num": "LT-WO-PENDING-001",
+            "order_type": "transfer",
+            "status": "pending",
+            "reason": "移动端测试待审批工单",
+            "source": source_shop,
+            "target": target_shop,
+            "action": "submitted",
+            "item": "AQC 测试商品 2100",
+        },
+        {
+            "order_num": "LT-WO-APPROVED-001",
+            "order_type": "purchase",
+            "status": "approved",
+            "reason": "移动端测试已通过进货单",
+            "source": None,
+            "target": target_shop,
+            "supplier_name": "本地测试供货单位",
+            "action": "approved",
+            "item": "AQC 测试商品 S100",
+        },
+        {
+            "order_num": "LT-WO-REJECTED-001",
+            "order_type": "sale_return",
+            "status": "rejected",
+            "reason": "移动端测试销售退货驳回单",
+            "source": source_shop,
+            "target": None,
+            "action": "rejected",
+            "item": "AQC 测试商品退货款",
+        },
+    ]
+    for index, seed in enumerate(seeds):
+        source = seed.get("source")
+        target = seed.get("target")
+        status = str(seed["status"])
+        order = AqcWorkOrder(
+            order_num=str(seed["order_num"]),
+            order_type=str(seed["order_type"]),
+            status=status,
+            reason=str(seed["reason"]),
+            form_date=now - timedelta(days=index),
+            source_shop_id=int(source.id) if source is not None else None,
+            source_shop_name=str(source.name) if source is not None else "",
+            target_shop_id=int(target.id) if target is not None else None,
+            target_shop_name=str(target.name) if target is not None else "",
+            supplier_name=str(seed.get("supplier_name") or ""),
+            applicant_id=int(admin.id),
+            applicant_name=applicant_name,
+            approver_id=int(admin.id),
+            approver_name=applicant_name,
+            submitted_at=now - timedelta(days=index) if status in {"pending", "approved", "rejected"} else None,
+            approved_at=now - timedelta(days=index) if status == "approved" else None,
+            created_at=now - timedelta(days=index),
+            updated_at=now - timedelta(days=index),
+        )
+        db.add(order)
+        db.flush()
+        db.add(
+            AqcWorkOrderItem(
+                work_order_id=int(order.id),
+                sort_index=1,
+                goods_name=str(seed["item"]),
+                brand="AQC",
+                series_name="本地测试",
+                quantity=2 + index,
+                unit_price=Decimal("1280.00"),
+                total_amount=Decimal(str((2 + index) * 1280)),
+                receivable_amount=Decimal(str((2 + index) * 1280)),
+                sale_shop_id=int(source.id) if source is not None else None,
+                sale_shop_name=str(source.name) if source is not None else "",
+            )
+        )
+        db.add(
+            AqcWorkOrderAction(
+                work_order_id=int(order.id),
+                action_type=str(seed["action"]),
+                status_from="",
+                status_to=status,
+                actor_id=int(admin.id),
+                actor_name=applicant_name,
+                created_at=now - timedelta(days=index),
+            )
+        )
+
+
 def init_db() -> None:
     lock_conn = _acquire_init_lock()
     db: Session | None = None
@@ -1016,6 +1151,7 @@ def init_db() -> None:
             _ensure_other_warehouses(db, created_by=None)
             _ensure_report_settings(db, None)
         _ensure_work_order_settings(db)
+        _ensure_local_test_work_orders(db, admin)
         _backfill_goods_model_attributes(db)
         _backfill_sale_record_runtime_fields(db)
         db.commit()

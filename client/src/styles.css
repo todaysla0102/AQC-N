@@ -87,7 +87,9 @@
 }
 
 .sales-records-overview-mobile,
-.mobile-sales-record-list {
+.mobile-sales-record-list,
+.mobile-goods-card-list,
+.mobile-shop-location-list {
   display: none;
 }
 
@@ -12219,11 +12221,30 @@ button.work-order-type-card {
     display: none !important;
   }
 
+  .goods-manage-page > .catalog-table > .table-shell,
+  .shop-warehouse-panel > .table-shell {
+    display: none !important;
+  }
+
   .mobile-sales-record-list {
     display: grid !important;
     gap: 10px !important;
     width: 100% !important;
     max-width: 100% !important;
+  }
+
+  .mobile-goods-card-list,
+  .mobile-shop-location-list {
+    display: grid !important;
+    gap: 10px !important;
+  }
+
+  .mobile-goods-card-list {
+    margin-bottom: 4px;
+  }
+
+  .mobile-shop-location-list {
+    margin-top: 10px;
   }
 
   .sales-record-table {
@@ -12248,6 +12269,26 @@ button.work-order-type-card {
     font-size: 12px !important;
     line-height: 1.5 !important;
     font-weight: 600 !important;
+  }
+
+  .mobile-sales-record-subtitle span,
+  .mobile-goods-card .mobile-sales-record-subtitle small,
+  .mobile-shop-location-card .mobile-sales-record-subtitle span {
+    color: var(--text-secondary) !important;
+    font-size: 12px !important;
+    line-height: 1.5 !important;
+    font-weight: 600 !important;
+  }
+
+  .mobile-goods-card,
+  .mobile-shop-location-card {
+    min-height: 86px;
+  }
+
+  .mobile-shop-location-card[disabled],
+  .work-order-category-card:disabled {
+    cursor: not-allowed;
+    opacity: 0.58;
   }
 
   .sales-record-mobile-detail-hero strong {

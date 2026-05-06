@@ -74,6 +74,29 @@
         <span>{{ storeRows.length }} 条</span>
       </header>
 
+      <section class="mobile-sales-record-list mobile-shop-location-list" v-loading="loading">
+        <article
+          v-for="row in storeRows"
+          :key="row.id"
+          class="mobile-sales-record-card mobile-shop-location-card"
+          role="button"
+          tabindex="0"
+          @click="openMobileShopActions(row)"
+          @keyup.enter="openMobileShopActions(row)"
+        >
+          <div class="mobile-sales-record-main">
+            <strong>{{ mobileShopTitle(row) }}</strong>
+            <p class="mobile-sales-record-subtitle">
+              <span>{{ mobileShopSubtitlePrimary(row) }}</span>
+            </p>
+            <small>{{ mobileShopSubtitleSecondary(row) }}</small>
+          </div>
+        </article>
+        <div v-if="!storeRows.length && !loading" class="mobile-sales-empty">
+          暂无店铺
+        </div>
+      </section>
+
       <div class="table-shell open-table-shell">
         <el-table :data="storeRows" border stripe v-loading="loading" empty-text="暂无店铺">
           <el-table-column prop="id" label="ID" width="88" />
@@ -131,6 +154,29 @@
         <span>{{ warehouseRows.length }} 条</span>
       </header>
 
+      <section class="mobile-sales-record-list mobile-shop-location-list" v-loading="loading">
+        <article
+          v-for="row in warehouseRows"
+          :key="row.id"
+          class="mobile-sales-record-card mobile-shop-location-card"
+          role="button"
+          tabindex="0"
+          @click="openMobileShopActions(row)"
+          @keyup.enter="openMobileShopActions(row)"
+        >
+          <div class="mobile-sales-record-main">
+            <strong>{{ mobileShopTitle(row) }}</strong>
+            <p class="mobile-sales-record-subtitle">
+              <span>{{ mobileShopSubtitlePrimary(row) }}</span>
+            </p>
+            <small>{{ mobileShopSubtitleSecondary(row) }}</small>
+          </div>
+        </article>
+        <div v-if="!warehouseRows.length && !loading" class="mobile-sales-empty">
+          暂无仓库
+        </div>
+      </section>
+
       <div class="table-shell open-table-shell">
         <el-table :data="warehouseRows" border stripe v-loading="loading" empty-text="暂无仓库">
           <el-table-column prop="id" label="ID" width="88" />
@@ -158,6 +204,29 @@
         <span>{{ otherWarehouseRows.length }} 条</span>
       </header>
 
+      <section class="mobile-sales-record-list mobile-shop-location-list" v-loading="loading">
+        <article
+          v-for="row in otherWarehouseRows"
+          :key="row.id"
+          class="mobile-sales-record-card mobile-shop-location-card"
+          role="button"
+          tabindex="0"
+          @click="openMobileShopActions(row)"
+          @keyup.enter="openMobileShopActions(row)"
+        >
+          <div class="mobile-sales-record-main">
+            <strong>{{ mobileShopTitle(row) }}</strong>
+            <p class="mobile-sales-record-subtitle">
+              <span>{{ mobileShopSubtitlePrimary(row) }}</span>
+            </p>
+            <small>{{ mobileShopSubtitleSecondary(row) }}</small>
+          </div>
+        </article>
+        <div v-if="!otherWarehouseRows.length && !loading" class="mobile-sales-empty">
+          暂无其他仓库
+        </div>
+      </section>
+
       <div class="table-shell open-table-shell">
         <el-table :data="otherWarehouseRows" border stripe v-loading="loading" empty-text="暂无其他仓库">
           <el-table-column prop="name" label="名称" min-width="260" show-overflow-tooltip />
@@ -182,6 +251,29 @@
         <span>{{ repairRows.length }} 条</span>
       </header>
 
+      <section class="mobile-sales-record-list mobile-shop-location-list" v-loading="loading">
+        <article
+          v-for="row in repairRows"
+          :key="row.id"
+          class="mobile-sales-record-card mobile-shop-location-card"
+          role="button"
+          tabindex="0"
+          @click="openMobileShopActions(row)"
+          @keyup.enter="openMobileShopActions(row)"
+        >
+          <div class="mobile-sales-record-main">
+            <strong>{{ mobileShopTitle(row) }}</strong>
+            <p class="mobile-sales-record-subtitle">
+              <span>{{ mobileShopSubtitlePrimary(row) }}</span>
+            </p>
+            <small>{{ mobileShopSubtitleSecondary(row) }}</small>
+          </div>
+        </article>
+        <div v-if="!repairRows.length && !loading" class="mobile-sales-empty">
+          暂无维修点
+        </div>
+      </section>
+
       <div class="table-shell open-table-shell">
         <el-table :data="repairRows" border stripe v-loading="loading" empty-text="暂无维修点">
           <el-table-column prop="id" label="ID" width="88" />
@@ -201,6 +293,42 @@
         </el-table>
       </div>
     </article>
+
+    <MobileBottomSheet
+      v-if="isMobileViewport"
+      v-model="mobileShopActionVisible"
+      :title="mobileShopTitle(activeMobileShop)"
+      :subtitle="mobileShopActionSubtitle"
+      :initial-snap="0.42"
+      :expanded-snap="0.68"
+    >
+      <section class="work-order-category-chooser sales-record-mobile-action-menu">
+        <button v-if="canMobileShopOpenGoods(activeMobileShop)" type="button" class="work-order-category-card" @click="openMobileShopGoods">
+          <strong>商品</strong>
+          <small>查看当前点位商品库存</small>
+        </button>
+        <button v-if="canOpenSchedule(activeMobileShop)" type="button" class="work-order-category-card" @click="openMobileShopSchedule">
+          <strong>排班</strong>
+          <small>查看当前店铺排班</small>
+        </button>
+        <button v-if="canOpenTarget(activeMobileShop)" type="button" class="work-order-category-card" @click="openMobileShopTarget">
+          <strong>目标</strong>
+          <small>查看当前店铺目标</small>
+        </button>
+        <button v-if="authStore.can('shops.write')" type="button" class="work-order-category-card" @click="editMobileShop">
+          <strong>编辑</strong>
+          <small>编辑地点资料</small>
+        </button>
+        <button v-if="authStore.can('shops.manage')" type="button" class="work-order-category-card danger" @click="deleteMobileShop">
+          <strong>删除</strong>
+          <small>删除后关联商品会失去归属</small>
+        </button>
+        <button v-if="!mobileShopActionItemsVisible" type="button" class="work-order-category-card" disabled>
+          <strong>暂无可用操作</strong>
+          <small>当前账号没有该地点的操作入口</small>
+        </button>
+      </section>
+    </MobileBottomSheet>
 
     <ResponsiveDialog
       v-model="dialogVisible"
@@ -859,6 +987,8 @@ const warehouseRows = ref([])
 const otherWarehouseRows = ref([])
 const repairRows = ref([])
 const userOptions = ref([])
+const activeMobileShop = ref(null)
+const mobileShopActionVisible = ref(false)
 
 const dialogVisible = ref(false)
 const editingId = ref(0)
@@ -1043,6 +1173,17 @@ const activeManagerName = computed(() => {
   const matched = userOptions.value.find((item) => item.id === Number(form.managerUserId || 0))
   return matched?.displayName || matched?.username || ''
 })
+const mobileShopActionSubtitle = computed(() => formatShopType(activeMobileShop.value?.shopType))
+const mobileShopActionItemsVisible = computed(() => {
+  const row = activeMobileShop.value
+  return Boolean(
+    canMobileShopOpenGoods(row)
+    || canOpenSchedule(row)
+    || canOpenTarget(row)
+    || authStore.can('shops.write')
+    || authStore.can('shops.manage'),
+  )
+})
 const activeGoodsShopName = computed(() => cleanText(goodsDialogShop.value?.name))
 const activeInventoryLogShopName = computed(() => cleanText(inventoryLogTarget.value?.name))
 const distributionModelTitle = computed(() => buildItemName(distributionItem.value) || '当前商品')
@@ -1143,6 +1284,90 @@ function formatShopType(shopType) {
       : Number(shopType || 0) === SHOP_TYPE_REPAIR
         ? '维修点'
         : '店铺'
+}
+
+function mobileShopTitle(row) {
+  if (!row) {
+    return '店铺 / 仓库'
+  }
+  return displayShopName(row.name) || '未命名地点'
+}
+
+function mobileShopSubtitlePrimary(row) {
+  if (!row) {
+    return ''
+  }
+  const managerLabel = Number(row.shopType || 0) === SHOP_TYPE_WAREHOUSE ? '库管' : '店长'
+  const peopleLabel = Number(row.shopType || 0) === SHOP_TYPE_REPAIR ? '工程师' : '销售员'
+  return [
+    Number.isFinite(Number(row.goodsQuantity)) ? `商品数量 ${Number(row.goodsQuantity || 0)}` : '',
+    cleanText(row.managerName) ? `${managerLabel} ${cleanText(row.managerName)}` : '',
+    cleanText(row.salespeople) ? `${peopleLabel} ${cleanText(row.salespeople)}` : '',
+  ].filter(Boolean).join(' · ') || formatShopType(row.shopType)
+}
+
+function mobileShopSubtitleSecondary(row) {
+  if (!row) {
+    return ''
+  }
+  return [
+    cleanText(row.address),
+    cleanText(row.phone),
+  ].filter(Boolean).join(' · ') || cleanText(row.businessHours)
+}
+
+function canMobileShopOpenGoods(row) {
+  if (!row || !authStore.can('goods.read')) {
+    return false
+  }
+  return Number(row.shopType || 0) !== SHOP_TYPE_REPAIR
+}
+
+function openMobileShopActions(row) {
+  activeMobileShop.value = row
+  mobileShopActionVisible.value = true
+}
+
+function openMobileShopGoods() {
+  const row = activeMobileShop.value
+  if (!canMobileShopOpenGoods(row)) {
+    ElMessage.warning('当前地点没有商品入口')
+    return
+  }
+  mobileShopActionVisible.value = false
+  void openGoodsDialog(row)
+}
+
+function openMobileShopSchedule() {
+  const row = activeMobileShop.value
+  mobileShopActionVisible.value = false
+  openSchedule(row)
+}
+
+function openMobileShopTarget() {
+  const row = activeMobileShop.value
+  mobileShopActionVisible.value = false
+  openTarget(row)
+}
+
+function editMobileShop() {
+  const row = activeMobileShop.value
+  if (!row?.id) {
+    ElMessage.warning('当前地点信息未准备完成')
+    return
+  }
+  mobileShopActionVisible.value = false
+  void openEdit(row)
+}
+
+function deleteMobileShop() {
+  const row = activeMobileShop.value
+  if (!row?.id) {
+    ElMessage.warning('当前地点信息未准备完成')
+    return
+  }
+  mobileShopActionVisible.value = false
+  void onDelete(row.id, row.shopType)
 }
 
 function shopGoodsTableSummary({ columns, data }) {

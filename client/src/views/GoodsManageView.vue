@@ -231,6 +231,31 @@
     </section>
 
     <section ref="goodsTableRef" class="catalog-table card-surface motion-fade-slide" style="--motion-delay: 0.16s">
+      <section class="mobile-sales-record-list mobile-goods-card-list" v-loading="loading">
+        <article
+          v-for="row in tableItems"
+          :key="row.id"
+          class="mobile-sales-record-card mobile-goods-card"
+          role="button"
+          tabindex="0"
+          @click="openMobileGoodsActions(row)"
+          @keyup.enter="openMobileGoodsActions(row)"
+        >
+          <div class="mobile-sales-record-main">
+            <strong>{{ mobileGoodsTitle(row) }}</strong>
+            <p class="mobile-sales-record-subtitle">
+              <span>¥ {{ formatMoney(row.price) }}</span>
+              <small> · 数量 {{ Number(row.stock || 0) }}</small>
+              <small v-if="mobileGoodsAttribute(row)"> · {{ mobileGoodsAttribute(row) }}</small>
+            </p>
+            <small>{{ mobileGoodsMeta(row) }}</small>
+          </div>
+        </article>
+        <div v-if="!tableItems.length && !loading" class="mobile-sales-empty">
+          暂无商品
+        </div>
+      </section>
+
       <div class="table-shell open-table-shell">
         <el-table
           class="goods-main-table"
@@ -334,6 +359,56 @@
         />
       </div>
     </section>
+
+    <MobileBottomSheet
+      v-if="isMobileViewport"
+      v-model="mobileGoodsActionVisible"
+      :title="mobileGoodsTitle(activeMobileGoods)"
+      subtitle="商品管理"
+      :initial-snap="0.42"
+      :expanded-snap="0.68"
+    >
+      <section class="work-order-category-chooser sales-record-mobile-action-menu">
+        <button type="button" class="work-order-category-card" @click="openMobileGoodsDetail">
+          <strong>商品详情</strong>
+          <small>{{ mobileGoodsDetailSubtitle }}</small>
+        </button>
+        <button type="button" class="work-order-category-card" @click="openMobileGoodsDistribution">
+          <strong>商品分布</strong>
+          <small>查询该商品库存分布</small>
+        </button>
+        <button v-if="authStore.isAdmin || authStore.can('goods.write')" type="button" class="work-order-category-card" @click="editMobileGoods">
+          <strong>编辑</strong>
+          <small>编辑商品属性或数量</small>
+        </button>
+        <button v-if="authStore.isAdmin || authStore.can('goods.manage')" type="button" class="work-order-category-card danger" @click="deleteMobileGoods">
+          <strong>删除</strong>
+          <small>删除后无法恢复</small>
+        </button>
+      </section>
+    </MobileBottomSheet>
+
+    <MobileBottomSheet
+      v-if="isMobileViewport"
+      v-model="mobileGoodsDetailVisible"
+      :title="mobileGoodsTitle(activeMobileGoods)"
+      subtitle="商品详情"
+      :initial-snap="0.72"
+      :expanded-snap="0.92"
+    >
+      <section class="sales-record-mobile-detail" v-if="activeMobileGoods" v-loading="mobileGoodsDetailLoading">
+        <div class="sales-record-mobile-detail-hero">
+          <strong>¥ {{ formatMoney(activeMobileGoods.price) }}</strong>
+          <span>{{ mobileGoodsDetailHeroText }}</span>
+        </div>
+        <div class="sales-record-mobile-detail-grid">
+          <article v-for="item in mobileGoodsDetailItems" :key="item.label">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.value || '-' }}</strong>
+          </article>
+        </div>
+      </section>
+    </MobileBottomSheet>
 
     <el-dialog
       v-model="goodsImportDialogVisible"
@@ -1405,6 +1480,10 @@ const editingId = ref(0)
 const detailLoading = ref(false)
 const editMenuVisible = ref(false)
 const editMenuTarget = ref(null)
+const activeMobileGoods = ref(null)
+const mobileGoodsActionVisible = ref(false)
+const mobileGoodsDetailVisible = ref(false)
+const mobileGoodsDetailLoading = ref(false)
 const distributionDialogVisible = ref(false)
 const distributionLoading = ref(false)
 const distributionItem = ref(null)
@@ -1607,6 +1686,42 @@ const activeFilterEntries = computed(() => ([
 ]).filter(([, value]) => String(value ?? '').trim()))
 const activeFilterCount = computed(() => activeFilterEntries.value.length)
 const editMenuDisplayName = computed(() => buildItemName(editMenuTarget.value) || '当前商品')
+const mobileGoodsDetailSubtitle = computed(() => {
+  const row = activeMobileGoods.value
+  if (!row) {
+    return '查看完整商品信息'
+  }
+  return [cleanText(row.brand), cleanText(row.series), cleanText(row.barcode)].filter(Boolean).join(' · ') || '查看完整商品信息'
+})
+const mobileGoodsDetailHeroText = computed(() => {
+  const row = activeMobileGoods.value
+  if (!row) {
+    return '商品详情'
+  }
+  return [
+    `数量 ${Number(row.stock || 0)}`,
+    `总销量 ${Number(row.salesCount || 0)}`,
+    mobileGoodsAttribute(row),
+  ].filter(Boolean).join(' · ')
+})
+const mobileGoodsDetailItems = computed(() => {
+  const row = activeMobileGoods.value
+  if (!row) {
+    return []
+  }
+  return [
+    { label: '商品ID', value: row.id },
+    { label: '型号', value: row.model },
+    { label: '品牌', value: row.brand },
+    { label: '系列', value: row.series },
+    { label: '属性', value: mobileGoodsAttribute(row) },
+    { label: '售价', value: `¥ ${formatMoney(row.price)}` },
+    { label: '数量', value: Number(row.stock || 0) },
+    { label: inventoryCompareActive.value ? '公司销量' : '总销量', value: Number(row.salesCount || 0) },
+    { label: '条码', value: row.barcode },
+    { label: '更新时间', value: row.updatedAt },
+  ].filter((item) => String(item.value ?? '').trim())
+})
 const distributionModelTitle = computed(() => cleanText(distributionItem.value?.model) || '未设置型号')
 const inventoryLogModelTitle = computed(() => buildItemName(inventoryLogTarget.value) || '当前商品')
 const distributionPositiveCount = computed(() => distributionInventories.value.filter((item) => Number(item.quantity || 0) > 0).length)
@@ -1798,6 +1913,89 @@ function buildBrandSeriesText(item) {
 
 function buildInventorySubtitle(item, positiveCount) {
   return buildBrandSeriesText(item) + ' · 有货点位 ' + String(positiveCount)
+}
+
+function mobileGoodsTitle(row) {
+  if (!row) {
+    return '商品'
+  }
+  return cleanText(row.model) || buildItemName(row)
+}
+
+function mobileGoodsAttribute(row) {
+  const value = cleanText(row?.modelAttribute)
+  return value && value !== '-' ? value : ''
+}
+
+function mobileGoodsMeta(row) {
+  if (!row) {
+    return ''
+  }
+  return [
+    cleanText(row.brand),
+    cleanText(row.series),
+    `总销量 ${Number(row.salesCount || 0)}`,
+  ].filter(Boolean).join(' · ')
+}
+
+function openMobileGoodsActions(row) {
+  activeMobileGoods.value = row
+  mobileGoodsActionVisible.value = true
+}
+
+async function openMobileGoodsDetail() {
+  if (!activeMobileGoods.value?.id) {
+    ElMessage.warning('当前商品信息未准备完成')
+    return
+  }
+  mobileGoodsActionVisible.value = false
+  mobileGoodsDetailVisible.value = true
+  mobileGoodsDetailLoading.value = true
+  try {
+    const payload = await fetchGoodsItemDetail(activeMobileGoods.value.id)
+    if (payload?.success && payload.item) {
+      activeMobileGoods.value = {
+        ...activeMobileGoods.value,
+        ...payload.item,
+      }
+      return
+    }
+    if (payload && !payload.success) {
+      ElMessage.error(payload.message || '商品详情加载失败')
+    }
+  } finally {
+    mobileGoodsDetailLoading.value = false
+  }
+}
+
+function openMobileGoodsDistribution() {
+  const row = activeMobileGoods.value
+  if (!row?.id) {
+    ElMessage.warning('当前商品信息未准备完成')
+    return
+  }
+  mobileGoodsActionVisible.value = false
+  void openDistribution(row)
+}
+
+function editMobileGoods() {
+  const row = activeMobileGoods.value
+  if (!row?.id) {
+    ElMessage.warning('当前商品信息未准备完成')
+    return
+  }
+  mobileGoodsActionVisible.value = false
+  openEditMenu(row)
+}
+
+function deleteMobileGoods() {
+  const row = activeMobileGoods.value
+  if (!row?.id) {
+    ElMessage.warning('当前商品信息未准备完成')
+    return
+  }
+  mobileGoodsActionVisible.value = false
+  void onDelete(row.id)
 }
 
 function normalizeInventoryComparePreset(rawPreset) {

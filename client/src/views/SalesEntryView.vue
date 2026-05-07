@@ -55,6 +55,9 @@
 
           <section v-else-if="mobileStep === 2" key="input" class="mobile-sales-step-panel mobile-sales-input-panel">
             <section class="mobile-sales-product-hero">
+              <figure v-if="mobileSelectedGoodsImageSrc" class="mobile-sales-product-image">
+                <img :src="mobileSelectedGoodsImageSrc" :alt="`${mobileSelectedModel} 商品图片`" loading="lazy" />
+              </figure>
               <strong>{{ mobileSelectedModel }}</strong>
               <span>{{ mobileSelectedInventorySubtitle }}</span>
             </section>
@@ -802,7 +805,7 @@ import MobileBottomSheet from '../components/MobileBottomSheet.vue'
 import ResponsiveTableActions from '../components/ResponsiveTableActions.vue'
 import { useBarcodeScanner } from '../composables/useBarcodeScanner'
 import { useMobileViewport } from '../composables/useMobileViewport'
-import { apiGet, apiPost, apiUpload } from '../services/api'
+import { apiAssetUrl, apiGet, apiPost, apiUpload } from '../services/api'
 import { useAuthStore } from '../stores/auth'
 import { confirmAction } from '../utils/confirm'
 import { getShanghaiDateTimeLocalValue } from '../utils/shanghaiTime'
@@ -872,6 +875,7 @@ const localTestMockGoods = [
     series: 'G-SHOCK',
     model: 'GM-2100-1A',
     barcode: 'MOCK-GM2100',
+    coverImage: '/aqc-dw5000.png',
     price: 1490,
     originalPrice: 1490,
     inventories: [
@@ -969,6 +973,7 @@ const form = reactive({
   goodsSeries: '',
   goodsModel: '',
   goodsBarcode: '',
+  goodsCoverImage: '',
   unitPrice: 0,
   receivableAmount: 0,
   receivedAmount: 0,
@@ -1002,6 +1007,7 @@ const mobileSelectedInventorySubtitle = computed(() => {
   const stockText = `${selectedGoodsShopQuantity.value}件`
   return shopName ? `${shopName}库存 ${stockText}` : `店铺库存 ${stockText}`
 })
+const mobileSelectedGoodsImageSrc = computed(() => apiAssetUrl(form.goodsCoverImage))
 const mobileCurrentStepLabel = computed(() => mobileStepOptions.find((item) => item.value === mobileStep.value)?.label || '定位')
 const selectedLocalMockGoods = computed(() => {
   const id = Number(form.goodsId || 0)
@@ -1688,6 +1694,33 @@ async function onResetSearch() {
   await loadMeta()
 }
 
+function parseGoodsImageList(value) {
+  if (Array.isArray(value)) {
+    return value.filter(Boolean).map((item) => String(item).trim()).filter(Boolean)
+  }
+  const text = String(value || '').trim()
+  if (!text || text === '[]') {
+    return []
+  }
+  try {
+    const parsed = JSON.parse(text)
+    if (Array.isArray(parsed)) {
+      return parsed.filter(Boolean).map((item) => String(item).trim()).filter(Boolean)
+    }
+  } catch (error) {
+    return []
+  }
+  return []
+}
+
+function resolveGoodsCoverImage(item) {
+  const coverImage = String(item?.coverImage || item?.cover_image || '').trim()
+  if (coverImage) {
+    return coverImage
+  }
+  return parseGoodsImageList(item?.imageList || item?.image_list)[0] || ''
+}
+
 function selectGoods(item) {
   const baseUnitPrice = Number(item.originalPrice || item.price || item.salePrice || 0)
   form.quantity = resolveQuantityValue(form.quantity || 1)
@@ -1697,6 +1730,7 @@ function selectGoods(item) {
   form.goodsSeries = item.series || ''
   form.goodsModel = item.model || ''
   form.goodsBarcode = item.barcode || ''
+  form.goodsCoverImage = resolveGoodsCoverImage(item)
   form.unitPrice = baseUnitPrice
   const computedAmount = Number((baseUnitPrice * Number(form.quantity || 1)).toFixed(2))
   form.receivableAmount = computedAmount
@@ -1716,6 +1750,7 @@ function clearSelectedGoods() {
   form.goodsSeries = ''
   form.goodsModel = ''
   form.goodsBarcode = ''
+  form.goodsCoverImage = ''
   form.unitPrice = 0
   form.receivableAmount = 0
   form.receivedAmount = 0

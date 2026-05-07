@@ -3,6 +3,26 @@ const base = import.meta.env.VITE_API_BASE || '/api'
 const API_BASE = base.endsWith('/') ? base.slice(0, -1) : base
 const JSON_CONTENT_TYPE_MARKERS = ['application/json', 'application/problem+json', '+json']
 
+export function apiAssetUrl(path = '') {
+  const value = String(path || '').trim()
+  if (!value) {
+    return ''
+  }
+  if (/^(https?:)?\/\//i.test(value) || value.startsWith('data:') || value.startsWith('blob:')) {
+    return value
+  }
+  const normalizedPath = value.startsWith('/') ? value : `/${value}`
+  if (!/^https?:\/\//i.test(API_BASE) || !normalizedPath.startsWith('/uploads/')) {
+    return normalizedPath
+  }
+  try {
+    const apiUrl = new URL(API_BASE)
+    return `${apiUrl.origin}${normalizedPath}`
+  } catch (error) {
+    return normalizedPath
+  }
+}
+
 function looksLikeJsonPayload(text = '') {
   const normalized = String(text || '').trim()
   if (!normalized) {

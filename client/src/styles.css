@@ -186,10 +186,16 @@
 
   .mobile-sales-step-panel {
     flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     gap: 18px;
     padding: 18px 14px calc(24px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mobile-sales-input-panel {
+    overflow-y: auto;
+    padding-bottom: 0;
   }
 
   .mobile-sales-locate-panel {
@@ -306,16 +312,21 @@
   .mobile-sales-product-image {
     width: min(56vw, 220px);
     aspect-ratio: 1;
+    margin: 0;
+    overflow: hidden;
     border-radius: 28px;
     border: 1px solid var(--border-light);
-    background:
-      radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--accent-color) 18%, transparent), transparent 38%),
-      color-mix(in srgb, var(--field-bg) 90%, transparent);
+    background: color-mix(in srgb, var(--field-bg) 90%, transparent);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: color-mix(in srgb, var(--accent-color) 70%, var(--text-light));
-    font-size: 58px;
+  }
+
+  .mobile-sales-product-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
   }
 
   .mobile-sales-product-hero > strong,
@@ -337,7 +348,10 @@
   }
 
   .mobile-sales-form {
-    display: grid;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
     gap: 12px;
   }
 
@@ -467,7 +481,12 @@
 
   .mobile-sales-submit-zone {
     margin-top: auto;
-    padding-top: 14px;
+    margin-inline: -14px;
+    position: sticky;
+    bottom: 0;
+    z-index: 8;
+    padding: 10px 14px calc(12px + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(to top, var(--bg-primary) 74%, transparent);
   }
 
   .mobile-sales-submit,

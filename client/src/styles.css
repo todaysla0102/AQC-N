@@ -304,7 +304,6 @@
   }
 
   .mobile-sales-product-image {
-    margin: 0;
     width: min(56vw, 220px);
     aspect-ratio: 1;
     border-radius: 28px;
@@ -317,13 +316,6 @@
     justify-content: center;
     color: color-mix(in srgb, var(--accent-color) 70%, var(--text-light));
     font-size: 58px;
-    overflow: hidden;
-  }
-
-  .mobile-sales-product-image img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
   }
 
   .mobile-sales-product-hero > strong,
@@ -344,17 +336,9 @@
     font-weight: 700;
   }
 
-  .mobile-sales-input-panel {
-    overflow-y: auto;
-    padding-bottom: 0;
-  }
-
   .mobile-sales-form {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
+    display: grid;
+    gap: 12px;
   }
 
   .mobile-sales-amount-row {
@@ -481,31 +465,9 @@
     padding-inline: 8px;
   }
 
-  .mobile-sales-mini-select-row .el-select__selection,
-  .mobile-sales-mini-select-row .el-select__selected-item {
-    min-width: 0;
-  }
-
-  .mobile-sales-mini-select-row .el-select__selected-item {
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .mobile-sales-mini-select-row .el-select__suffix {
-    flex: 0 0 auto;
-    margin-left: 4px;
-  }
-
   .mobile-sales-submit-zone {
     margin-top: auto;
-    position: sticky;
-    bottom: 0;
-    z-index: 8;
-    margin-inline: -14px;
-    padding: 10px 14px calc(12px + env(safe-area-inset-bottom, 0px));
-    background: linear-gradient(to top, var(--bg-primary) 74%, transparent);
+    padding-top: 14px;
   }
 
   .mobile-sales-submit,
@@ -8854,166 +8816,6 @@ button.work-order-type-card {
   color: var(--text-secondary);
 }
 
-.goods-table-thumb-shell {
-  width: 54px;
-  height: 54px;
-  margin: 0 auto;
-  border: 1px solid var(--border-light);
-  border-radius: 8px;
-  background:
-    linear-gradient(45deg, color-mix(in srgb, var(--field-bg) 78%, #fff) 25%, transparent 25%),
-    linear-gradient(-45deg, color-mix(in srgb, var(--field-bg) 78%, #fff) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--field-bg) 78%, #fff) 75%),
-    linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--field-bg) 78%, #fff) 75%);
-  background-size: 12px 12px;
-  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-}
-
-.goods-table-thumb {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.goods-table-thumb-empty {
-  color: var(--text-light);
-  font-size: 12px;
-}
-
-.mobile-goods-title-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.mobile-goods-thumb {
-  width: 46px;
-  height: 46px;
-  flex: 0 0 46px;
-  object-fit: contain;
-  border: 1px solid var(--border-light);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--field-bg) 88%, transparent);
-}
-
-.goods-image-file-input {
-  display: none;
-}
-
-.goods-image-manager {
-  border: 1px solid var(--border-light);
-  border-radius: 24px;
-  padding: 16px;
-  background: color-mix(in srgb, var(--bg-elevated) 90%, transparent);
-  display: grid;
-  gap: 14px;
-}
-
-.goods-image-manager-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.goods-image-manager-head > div:first-child {
-  display: grid;
-  gap: 4px;
-}
-
-.goods-image-manager-head span,
-.goods-image-empty span {
-  color: var(--text-light);
-  font-size: 12px;
-}
-
-.goods-image-manager-head strong {
-  font-size: 18px;
-}
-
-.goods-image-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
-  gap: 12px;
-}
-
-.goods-image-item {
-  position: relative;
-  border: 1px solid var(--border-light);
-  border-radius: 12px;
-  padding: 8px;
-  background: color-mix(in srgb, var(--field-bg) 84%, transparent);
-  display: grid;
-  gap: 8px;
-}
-
-.goods-image-preview {
-  height: 124px;
-  border: 1px solid var(--border-light);
-  border-radius: 8px;
-  background:
-    linear-gradient(45deg, rgba(148, 163, 184, 0.13) 25%, transparent 25%),
-    linear-gradient(-45deg, rgba(148, 163, 184, 0.13) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, rgba(148, 163, 184, 0.13) 75%),
-    linear-gradient(-45deg, transparent 75%, rgba(148, 163, 184, 0.13) 75%);
-  background-size: 14px 14px;
-  background-position: 0 0, 0 7px, 7px -7px, -7px 0;
-  cursor: zoom-in;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-}
-
-.goods-image-preview img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.goods-image-item-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-}
-
-.goods-cover-badge {
-  position: absolute;
-  top: 14px;
-  left: 14px;
-  border-radius: 999px;
-  padding: 4px 8px;
-  background: var(--brand-primary);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.goods-image-empty {
-  min-height: 92px;
-  border: 1px dashed var(--border-light);
-  border-radius: 14px;
-  display: grid;
-  place-items: center;
-  text-align: center;
-  background: color-mix(in srgb, var(--field-bg) 70%, transparent);
-}
-
-.goods-image-preview-stage {
-  min-height: 280px;
-  display: grid;
-  place-items: center;
-}
-
-.goods-image-preview-stage img {
-  max-width: 100%;
-  max-height: min(72vh, 680px);
-  object-fit: contain;
-}
-
 .goods-stock-pill {
   display: inline-flex;
   align-items: center;
@@ -11091,7 +10893,6 @@ button.work-order-type-card {
   .goods-compare-toggle-row,
   .goods-compare-preset-row,
   .goods-compare-selection-summary,
-  .goods-image-manager-head,
   .export-columns-toolbar,
   .export-columns-selection-summary {
     align-items: stretch;

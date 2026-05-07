@@ -58,8 +58,6 @@ services:
       SYMUSE_STATE_REQUIRED: ${SYMUSE_STATE_REQUIRED:-true}
       SYMUSE_STATE_IP_STRICT: ${SYMUSE_STATE_IP_STRICT:-false}
       AQCO_SQL_PATH: ${AQCO_SQL_PATH:-/legacy-data/whaqc_data.sql}
-      AQC_UPLOAD_ROOT: /app/uploads
-      AQC_UPLOAD_URL_PREFIX: /uploads
       SYMUSE_AQC_SYNC_ENABLED: ${SYMUSE_AQC_SYNC_ENABLED:-false}
       SYMUSE_ADMIN_ACCOUNT: ${SYMUSE_ADMIN_ACCOUNT:-}
       SYMUSE_ADMIN_PASSWORD: ${SYMUSE_ADMIN_PASSWORD:-}
@@ -76,7 +74,6 @@ services:
       - "${LOCAL_TEST_API_PORT:-18080}:8000"
     volumes:
       - ./legacy-assets/aqc-o/database:/legacy-data:ro
-      - ./uploads:/app/uploads
     mem_limit: ${API_MEM_LIMIT:-512m}
 
 volumes:

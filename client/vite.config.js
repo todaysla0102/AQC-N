@@ -37,7 +37,6 @@ function buildVersionPlugin(buildVersion) {
 
 export default defineConfig(() => {
   const buildVersion = process.env.BUILD_VERSION || packageJson.version
-  const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || 'http://localhost:18080'
 
   return {
     plugins: [vue(), buildVersionPlugin(buildVersion)],
@@ -47,16 +46,6 @@ export default defineConfig(() => {
     server: {
       host: '0.0.0.0',
       port: 5173,
-      proxy: {
-        '/api': {
-          target: apiProxyTarget,
-          changeOrigin: true,
-        },
-        '/uploads': {
-          target: apiProxyTarget,
-          changeOrigin: true,
-        },
-      },
     },
     build: {
       chunkSizeWarningLimit: 1000,

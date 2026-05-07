@@ -55,6 +55,9 @@
 
           <section v-else-if="mobileStep === 2" key="input" class="mobile-sales-step-panel mobile-sales-input-panel">
             <section class="mobile-sales-product-hero">
+              <figure v-if="mobileSelectedGoodsImageSrc" class="mobile-sales-product-image">
+                <img :src="mobileSelectedGoodsImageSrc" :alt="mobileSelectedModel" loading="lazy" />
+              </figure>
               <strong>{{ mobileSelectedModel }}</strong>
               <span>{{ mobileSelectedInventorySubtitle }}</span>
             </section>
@@ -802,7 +805,7 @@ import MobileBottomSheet from '../components/MobileBottomSheet.vue'
 import ResponsiveTableActions from '../components/ResponsiveTableActions.vue'
 import { useBarcodeScanner } from '../composables/useBarcodeScanner'
 import { useMobileViewport } from '../composables/useMobileViewport'
-import { apiGet, apiPost, apiUpload } from '../services/api'
+import { apiAssetUrl, apiGet, apiPost, apiUpload } from '../services/api'
 import { useAuthStore } from '../stores/auth'
 import { confirmAction } from '../utils/confirm'
 import { getShanghaiDateTimeLocalValue } from '../utils/shanghaiTime'
@@ -969,6 +972,7 @@ const form = reactive({
   goodsSeries: '',
   goodsModel: '',
   goodsBarcode: '',
+  goodsCoverImage: '',
   unitPrice: 0,
   receivableAmount: 0,
   receivedAmount: 0,
@@ -997,6 +1001,10 @@ const goodsDisplayName = computed(() => {
   return [form.goodsBrand, form.goodsSeries, form.goodsModel].filter(Boolean).join(' ').trim() || '未选择商品'
 })
 const mobileSelectedModel = computed(() => form.goodsModel || '未选择型号')
+const mobileSelectedGoodsImageSrc = computed(() => {
+  const source = String(form.goodsCoverImage || '').trim()
+  return source ? apiAssetUrl(source) : ''
+})
 const mobileSelectedInventorySubtitle = computed(() => {
   const shopName = simplifyShopName(form.shipShopName || form.shopName || defaultUserShopName.value)
   const stockText = `${selectedGoodsShopQuantity.value}件`
@@ -1662,6 +1670,30 @@ async function searchSuggestions() {
   await Promise.all([loadMeta(), loadSuggestions()])
 }
 
+function parseGoodsImageList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean)
+  }
+  const text = String(value || '').trim()
+  if (!text) {
+    return []
+  }
+  try {
+    const parsed = JSON.parse(text)
+    return Array.isArray(parsed) ? parsed.map((item) => String(item || '').trim()).filter(Boolean) : []
+  } catch (_error) {
+    return []
+  }
+}
+
+function resolveGoodsCoverImage(item = {}) {
+  const explicitCover = String(item.coverImage || item.cover_image || '').trim()
+  if (explicitCover) {
+    return explicitCover
+  }
+  return parseGoodsImageList(item.imageList || item.image_list)[0] || ''
+}
+
 async function onResetSearch() {
   if (isRepairMode.value) {
     form.soldAt = defaultSoldAt
@@ -1697,6 +1729,7 @@ function selectGoods(item) {
   form.goodsSeries = item.series || ''
   form.goodsModel = item.model || ''
   form.goodsBarcode = item.barcode || ''
+  form.goodsCoverImage = resolveGoodsCoverImage(item)
   form.unitPrice = baseUnitPrice
   const computedAmount = Number((baseUnitPrice * Number(form.quantity || 1)).toFixed(2))
   form.receivableAmount = computedAmount
@@ -1716,6 +1749,7 @@ function clearSelectedGoods() {
   form.goodsSeries = ''
   form.goodsModel = ''
   form.goodsBarcode = ''
+  form.goodsCoverImage = ''
   form.unitPrice = 0
   form.receivableAmount = 0
   form.receivedAmount = 0

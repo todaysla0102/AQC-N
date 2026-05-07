@@ -3,6 +3,25 @@ const base = import.meta.env.VITE_API_BASE || '/api'
 const API_BASE = base.endsWith('/') ? base.slice(0, -1) : base
 const JSON_CONTENT_TYPE_MARKERS = ['application/json', 'application/problem+json', '+json']
 
+export function apiAssetUrl(path = '') {
+  const value = String(path || '').trim()
+  if (!value || /^(https?:)?\/\//i.test(value) || value.startsWith('data:') || value.startsWith('blob:')) {
+    return value
+  }
+  if (!value.startsWith('/')) {
+    return value
+  }
+  if (typeof window === 'undefined' || API_BASE.startsWith('/')) {
+    return value
+  }
+  try {
+    const apiUrl = new URL(API_BASE, window.location.origin)
+    return `${apiUrl.origin}${value}`
+  } catch (error) {
+    return value
+  }
+}
+
 function looksLikeJsonPayload(text = '') {
   const normalized = String(text || '').trim()
   if (!normalized) {
@@ -164,7 +183,7 @@ export async function apiRequest(path, options = {}) {
       return {
         success: false,
         ...payload,
-        message: payload.message || buildHttpErrorMessage(response, text),
+        message: payload.message || (typeof payload.detail === 'string' ? payload.detail : '') || buildHttpErrorMessage(response, text),
         httpStatus: payload.httpStatus || response.status,
       }
     }

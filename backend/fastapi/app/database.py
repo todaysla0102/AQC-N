@@ -538,6 +538,8 @@ def _ensure_runtime_columns() -> None:
             "model_attribute": "VARCHAR(8) NOT NULL DEFAULT '-'",
             "barcode": "VARCHAR(64) NOT NULL DEFAULT ''",
             "index_key": "VARCHAR(8) NOT NULL DEFAULT ''",
+            "cover_image": "VARCHAR(500) NOT NULL DEFAULT ''",
+            "image_list": "TEXT NULL",
         },
         "aqc_users": {
             "aqc_role_key": "VARCHAR(40) NOT NULL DEFAULT 'aqc_sales'",

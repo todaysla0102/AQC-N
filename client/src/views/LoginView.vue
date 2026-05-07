@@ -87,7 +87,14 @@ const authStore = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 
-const localTestLoginEnabled = import.meta.env.VITE_LOCAL_TEST_LOGIN === 'true'
+function isLocalDevHost() {
+  if (!import.meta.env.DEV || typeof window === 'undefined') {
+    return false
+  }
+  return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+}
+
+const localTestLoginEnabled = import.meta.env.VITE_LOCAL_TEST_LOGIN === 'true' || isLocalDevHost()
 const submitting = ref(false)
 const preparing = ref(false)
 const localSubmitting = ref(false)

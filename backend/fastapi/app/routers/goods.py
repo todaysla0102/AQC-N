@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import json
 import tempfile
+import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from urllib.parse import unquote
 
-from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from ..config import settings
 from ..database import get_db
 from ..deps import require_permissions, to_iso
 from ..goods_attributes import (
@@ -56,6 +59,15 @@ from ..schemas import (
 
 router = APIRouter(prefix="/goods", tags=["goods"])
 
+GOODS_UPLOAD_SUBDIR = "goods"
+ALLOWED_GOODS_IMAGE_TYPES = {
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+    "image/webp",
+    "image/gif",
+}
+
 CATALOG_READY_CONDITION = or_(
     func.coalesce(AqcGoodsItem.model_name, "") != "",
     func.coalesce(AqcGoodsItem.name, "") != "",
@@ -78,6 +90,52 @@ SORT_FIELD_MAP = {
 
 def _clean_text(value: str | None, max_length: int) -> str:
     return clean_goods_text(value, max_length)
+
+
+def _goods_upload_dir() -> Path:
+    upload_dir = Path(settings.upload_root).resolve() / GOODS_UPLOAD_SUBDIR
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    return upload_dir
+
+
+def _build_upload_url(filename: str) -> str:
+    prefix = settings.upload_url_prefix.rstrip("/") or "/uploads"
+    return f"{prefix}/{GOODS_UPLOAD_SUBDIR}/{filename}"
+
+
+def _detect_goods_image_extension(body: bytes) -> str | None:
+    if body.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if body.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if body.startswith((b"GIF87a", b"GIF89a")):
+        return ".gif"
+    if len(body) >= 12 and body[:4] == b"RIFF" and body[8:12] == b"WEBP":
+        return ".webp"
+    return None
+
+
+def _normalize_goods_image_list(raw: str | None) -> str:
+    if raw is None:
+        return "[]"
+    clean = raw.strip()
+    if not clean:
+        return "[]"
+    try:
+        parsed = json.loads(clean)
+    except Exception:
+        return "[]"
+    if not isinstance(parsed, list):
+        return "[]"
+    images = []
+    seen: set[str] = set()
+    for item in parsed:
+        image = _clean_text(str(item or ""), 500)
+        if not image or image in seen:
+            continue
+        images.append(image)
+        seen.add(image)
+    return json.dumps(images[:30], ensure_ascii=False)
 
 
 def _to_amount(value: float | int | str | None) -> Decimal:
@@ -716,7 +774,7 @@ def _apply_payload_to_goods_item(
     if payload.coverImage is not None:
         goods_item.cover_image = _clean_text(payload.coverImage, 500)
     if payload.imageList is not None:
-        goods_item.image_list = (payload.imageList or "[]").strip()
+        goods_item.image_list = _normalize_goods_image_list(payload.imageList)
     if payload.description is not None:
         goods_item.description = (payload.description or "").strip()
     if payload.detail is not None:
@@ -1126,6 +1184,44 @@ def get_goods_item_detail(
     return {"success": True, "item": _to_goods_out(item)}
 
 
+@router.post("/images")
+async def upload_goods_image(
+    request: Request,
+    x_file_name: str | None = Header(default=None),
+    user: AqcUser = Depends(require_permissions("goods.write")),
+):
+    del user
+    content_type = str(request.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+    if content_type and content_type not in ALLOWED_GOODS_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="仅支持上传 PNG、JPG、JPEG、WebP 或 GIF 图片")
+
+    body = await request.body()
+    max_bytes = max(int(settings.goods_image_max_bytes or 0), 1024 * 1024)
+    if not body:
+        raise HTTPException(status_code=400, detail="图片内容为空")
+    if len(body) > max_bytes:
+        raise HTTPException(status_code=400, detail=f"图片不能超过 {max_bytes // 1024 // 1024}MB")
+    extension = _detect_goods_image_extension(body)
+    if extension is None:
+        raise HTTPException(status_code=400, detail="图片格式必须为 PNG、JPG、JPEG、WebP 或 GIF")
+
+    source_name = unquote(x_file_name or "").strip()
+    stem = Path(source_name).stem if source_name else "goods"
+    safe_stem = "".join(ch if ch.isascii() and (ch.isalnum() or ch in {"-", "_"}) else "-" for ch in stem).strip("-_")
+    safe_stem = safe_stem[:48] or "goods"
+    filename = f"{datetime.utcnow():%Y%m%d%H%M%S}-{safe_stem}-{uuid.uuid4().hex[:12]}{extension}"
+    target = _goods_upload_dir() / filename
+    target.write_bytes(body)
+
+    return {
+        "success": True,
+        "message": "图片上传成功",
+        "url": _build_upload_url(filename),
+        "fileName": filename,
+        "size": len(body),
+    }
+
+
 @router.get("/items/{item_id}/inventory", response_model=GoodsInventoryResponse)
 def get_goods_item_inventory(
     item_id: int,
@@ -1346,7 +1442,7 @@ def create_goods_item(
         name=draft_name,
         category_id=payload.categoryId,
         cover_image=_clean_text(payload.coverImage, 500),
-        image_list=(payload.imageList or "[]").strip(),
+        image_list=_normalize_goods_image_list(payload.imageList),
         description=(payload.description or "").strip(),
         detail=(payload.detail or "").strip(),
         price=_to_amount(payload.price),

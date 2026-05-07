@@ -1,5 +1,14 @@
 <template>
   <section class="goods-manage-page goods-catalog-page">
+    <input
+      ref="goodsImageFileInputRef"
+      class="goods-image-file-input"
+      type="file"
+      accept="image/png,image/jpeg,image/webp,image/gif"
+      multiple
+      @change="onGoodsImageFileChange"
+    />
+
     <section class="catalog-controls card-surface motion-fade-slide" style="--motion-delay: 0.08s">
       <div class="goods-search-shell">
         <el-input
@@ -242,7 +251,10 @@
           @keyup.enter="openMobileGoodsActions(row)"
         >
           <div class="mobile-sales-record-main">
-            <strong>{{ mobileGoodsTitle(row) }}</strong>
+            <div class="mobile-goods-title-row">
+              <img v-if="row.coverImage" class="mobile-goods-thumb" :src="goodsImageSrc(row.coverImage)" alt="" loading="lazy" />
+              <strong>{{ mobileGoodsTitle(row) }}</strong>
+            </div>
             <p class="mobile-sales-record-subtitle">
               <span>¥ {{ formatMoney(row.price) }}</span>
               <small> · 数量 {{ Number(row.stock || 0) }}</small>
@@ -278,6 +290,14 @@
             </template>
             <template #default="{ row }">
               <span class="goods-model-fixed-cell" :title="row.model || '-'">{{ row.model || '-' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="图片" width="86" align="center">
+            <template #default="{ row }">
+              <div class="goods-table-thumb-shell">
+                <img v-if="row.coverImage" class="goods-table-thumb" :src="goodsImageSrc(row.coverImage)" alt="" loading="lazy" />
+                <span v-else class="goods-table-thumb-empty">无</span>
+              </div>
             </template>
           </el-table-column>
           <el-table-column prop="modelAttribute" label="属性" width="82" />
@@ -695,6 +715,35 @@
                 </div>
               </el-form-item>
 
+              <div class="dialog-span-full goods-image-manager">
+                <div class="goods-image-manager-head">
+                  <div>
+                    <span>商品图片</span>
+                    <strong>{{ form.images.length ? form.images.length + ' 张' : '未添加' }}</strong>
+                  </div>
+                  <div class="toolbar-actions">
+                    <el-button type="primary" plain :loading="imageUploadPending" @click="triggerGoodsImagePicker">添加图片</el-button>
+                  </div>
+                </div>
+                <div v-if="form.images.length" class="goods-image-grid">
+                  <article v-for="(image, imageIndex) in form.images" :key="image" class="goods-image-item">
+                    <button type="button" class="goods-image-preview" @click="previewGoodsImage(image)">
+                      <img :src="goodsImageSrc(image)" alt="" loading="lazy" />
+                    </button>
+                    <div class="goods-image-item-actions">
+                      <el-button size="small" text :disabled="form.coverImage === image" @click="setGoodsCoverImage(image)">封面</el-button>
+                      <el-button size="small" text :disabled="imageIndex === 0" @click="moveGoodsImage(imageIndex, -1)">上移</el-button>
+                      <el-button size="small" text :disabled="imageIndex === form.images.length - 1" @click="moveGoodsImage(imageIndex, 1)">下移</el-button>
+                      <el-button size="small" type="danger" text @click="removeGoodsImage(image)">删除</el-button>
+                    </div>
+                    <span v-if="form.coverImage === image" class="goods-cover-badge">封面</span>
+                  </article>
+                </div>
+                <div v-else class="goods-image-empty">
+                  <span>支持 PNG、JPG、JPEG、WebP、GIF，PNG 可透明底</span>
+                </div>
+              </div>
+
               <div class="dialog-span-full goods-preview-card">
                 <span>自动名称</span>
                 <strong>{{ displayName }}</strong>
@@ -878,6 +927,35 @@
               </div>
             </el-form-item>
 
+            <div class="dialog-span-full goods-image-manager">
+              <div class="goods-image-manager-head">
+                <div>
+                  <span>商品图片</span>
+                  <strong>{{ form.images.length ? form.images.length + ' 张' : '未添加' }}</strong>
+                </div>
+                <div class="toolbar-actions">
+                  <el-button type="primary" plain :loading="imageUploadPending" @click="triggerGoodsImagePicker">添加图片</el-button>
+                </div>
+              </div>
+              <div v-if="form.images.length" class="goods-image-grid">
+                <article v-for="(image, imageIndex) in form.images" :key="image" class="goods-image-item">
+                  <button type="button" class="goods-image-preview" @click="previewGoodsImage(image)">
+                    <img :src="goodsImageSrc(image)" alt="" loading="lazy" />
+                  </button>
+                  <div class="goods-image-item-actions">
+                    <el-button size="small" text :disabled="form.coverImage === image" @click="setGoodsCoverImage(image)">封面</el-button>
+                    <el-button size="small" text :disabled="imageIndex === 0" @click="moveGoodsImage(imageIndex, -1)">上移</el-button>
+                    <el-button size="small" text :disabled="imageIndex === form.images.length - 1" @click="moveGoodsImage(imageIndex, 1)">下移</el-button>
+                    <el-button size="small" type="danger" text @click="removeGoodsImage(image)">删除</el-button>
+                  </div>
+                  <span v-if="form.coverImage === image" class="goods-cover-badge">封面</span>
+                </article>
+              </div>
+              <div v-else class="goods-image-empty">
+                <span>支持 PNG、JPG、JPEG、WebP、GIF，PNG 可透明底</span>
+              </div>
+            </div>
+
             <div class="dialog-span-full goods-preview-card">
               <span>自动名称</span>
               <strong>{{ displayName }}</strong>
@@ -897,6 +975,18 @@
         </div>
       </template>
     </ResponsiveDialog>
+
+    <el-dialog
+      v-model="goodsImagePreviewVisible"
+      width="min(720px, 94vw)"
+      append-to-body
+      align-center
+      class="aqc-app-dialog goods-image-preview-dialog"
+    >
+      <div class="goods-image-preview-stage">
+        <img v-if="goodsImagePreviewUrl" :src="goodsImageSrc(goodsImagePreviewUrl)" alt="" />
+      </div>
+    </el-dialog>
 
     <el-dialog
       v-model="inventoryCompareDialogVisible"
@@ -1403,7 +1493,7 @@ import ResponsiveDialog from '../components/ResponsiveDialog.vue'
 import ResponsiveTableActions from '../components/ResponsiveTableActions.vue'
 import { useMobileViewport } from '../composables/useMobileViewport'
 import { useBarcodeScanner } from '../composables/useBarcodeScanner'
-import { apiDelete, apiGet, apiPost, apiPut, apiUpload } from '../services/api'
+import { apiAssetUrl, apiDelete, apiGet, apiPost, apiPut, apiUpload } from '../services/api'
 import { useAuthStore } from '../stores/auth'
 import { confirmDestructiveAction } from '../utils/confirm'
 import { buildLogCenterQuery } from '../utils/logCenter'
@@ -1437,6 +1527,10 @@ const inventoryImportFiles = ref([])
 const inventoryImportPending = ref(false)
 const inventoryImportDryRunPending = ref(false)
 const inventoryImportResult = ref(null)
+const goodsImageFileInputRef = ref(null)
+const imageUploadPending = ref(false)
+const goodsImagePreviewVisible = ref(false)
+const goodsImagePreviewUrl = ref('')
 const inventoryCompareDialogVisible = ref(false)
 const salesRangeDialogVisible = ref(false)
 const createStep = ref(1)
@@ -1559,6 +1653,8 @@ const form = reactive({
   modelAttribute: '-',
   barcode: '',
   price: 0,
+  coverImage: '',
+  images: [],
 })
 
 const goodsAttributeOptions = [
@@ -1821,6 +1917,131 @@ function formatMoney(value) {
 
 function cleanText(value) {
   return String(value || '').trim()
+}
+
+function goodsImageSrc(value) {
+  return apiAssetUrl(value)
+}
+
+function parseGoodsImageList(value) {
+  if (Array.isArray(value)) {
+    return value.map(cleanText).filter(Boolean)
+  }
+  const text = cleanText(value)
+  if (!text) {
+    return []
+  }
+  try {
+    const parsed = JSON.parse(text)
+    return Array.isArray(parsed) ? parsed.map(cleanText).filter(Boolean) : []
+  } catch (error) {
+    return []
+  }
+}
+
+function uniqGoodsImages(images = []) {
+  const seen = new Set()
+  const normalized = []
+  images.map(cleanText).filter(Boolean).forEach((image) => {
+    if (seen.has(image)) {
+      return
+    }
+    seen.add(image)
+    normalized.push(image)
+  })
+  return normalized
+}
+
+function syncGoodsCoverImage() {
+  if (!form.images.length) {
+    form.coverImage = ''
+    return
+  }
+  if (!form.coverImage || !form.images.includes(form.coverImage)) {
+    form.coverImage = form.images[0]
+  }
+}
+
+function setGoodsImages({ coverImage = '', imageList = '[]' } = {}) {
+  const images = uniqGoodsImages([coverImage, ...parseGoodsImageList(imageList)])
+  form.images = images
+  form.coverImage = cleanText(coverImage) || images[0] || ''
+  syncGoodsCoverImage()
+}
+
+function triggerGoodsImagePicker() {
+  goodsImageFileInputRef.value?.click()
+}
+
+async function onGoodsImageFileChange(event) {
+  const input = event?.target
+  const files = Array.from(input?.files || [])
+  if (input) {
+    input.value = ''
+  }
+  if (!files.length) {
+    return
+  }
+
+  const allowedImageTypes = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'])
+  const allowedImageExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
+  const invalidFile = files.find((file) => {
+    const fileName = String(file.name || '').toLowerCase()
+    return !allowedImageTypes.has(file.type) && !allowedImageExtensions.some((extension) => fileName.endsWith(extension))
+  })
+  if (invalidFile) {
+    ElMessage.warning('商品图片仅支持 PNG、JPG、JPEG、WebP 或 GIF 格式')
+    return
+  }
+
+  imageUploadPending.value = true
+  try {
+    const uploaded = []
+    for (const file of files) {
+      const payload = await apiUpload('/goods/images', file, {
+        token: authStore.token,
+        timeoutMs: 20000,
+      })
+      if (!payload?.success || !payload.url) {
+        ElMessage.error(payload?.message || '图片上传失败')
+        continue
+      }
+      uploaded.push(payload.url)
+    }
+    if (uploaded.length) {
+      form.images = uniqGoodsImages([...form.images, ...uploaded])
+      syncGoodsCoverImage()
+      ElMessage.success(`已上传 ${uploaded.length} 张商品图片`)
+    }
+  } finally {
+    imageUploadPending.value = false
+  }
+}
+
+function setGoodsCoverImage(image) {
+  form.coverImage = cleanText(image)
+  syncGoodsCoverImage()
+}
+
+function moveGoodsImage(index, direction) {
+  const nextIndex = index + direction
+  if (nextIndex < 0 || nextIndex >= form.images.length) {
+    return
+  }
+  const images = [...form.images]
+  const [item] = images.splice(index, 1)
+  images.splice(nextIndex, 0, item)
+  form.images = images
+}
+
+function removeGoodsImage(image) {
+  form.images = form.images.filter((item) => item !== image)
+  syncGoodsCoverImage()
+}
+
+function previewGoodsImage(image) {
+  goodsImagePreviewUrl.value = cleanText(image)
+  goodsImagePreviewVisible.value = Boolean(goodsImagePreviewUrl.value)
 }
 
 function getShanghaiDateString(date = new Date()) {
@@ -2147,6 +2368,8 @@ function resetForm() {
   form.modelAttribute = '-'
   form.barcode = ''
   form.price = 0
+  form.coverImage = ''
+  form.images = []
 }
 
 function resetCreateFlowState() {
@@ -2967,6 +3190,7 @@ async function openPropertyEditor(targetRow) {
     form.modelAttribute = item.modelAttribute || '-'
     form.barcode = item.barcode || ''
     form.price = Number(item.price || 0)
+    setGoodsImages({ coverImage: item.coverImage || '', imageList: item.imageList || '[]' })
     await loadDialogMeta(form.brand)
   } finally {
     detailLoading.value = false
@@ -3264,6 +3488,9 @@ function openQuantityEditorFromMenu() {
 function buildBasePayload() {
   const safePrice = Number(form.price || 0)
   const safeBarcode = cleanText(form.barcode)
+  syncGoodsCoverImage()
+  const safeCoverImage = cleanText(form.coverImage)
+  const galleryImages = uniqGoodsImages(form.images).filter((image) => image !== safeCoverImage)
 
   return {
     name: displayName.value,
@@ -3273,6 +3500,8 @@ function buildBasePayload() {
     model: cleanText(form.model),
     modelAttribute: cleanText(form.modelAttribute) || '-',
     barcode: safeBarcode,
+    coverImage: safeCoverImage,
+    imageList: JSON.stringify(galleryImages),
     price: safePrice,
     originalPrice: safePrice,
     salePrice: safePrice,

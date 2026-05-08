@@ -256,7 +256,7 @@
         </div>
       </section>
 
-      <div class="table-shell open-table-shell">
+      <div class="table-shell open-table-shell goods-table-sticky-shell">
         <el-table
           class="goods-main-table"
           :data="tableItems"
@@ -278,6 +278,20 @@
             </template>
             <template #default="{ row }">
               <span class="goods-model-fixed-cell" :title="row.model || '-'">{{ row.model || '-' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="图片" width="72" align="center">
+            <template #default="{ row }">
+              <button
+                v-if="resolveGoodsCoverImage(row)"
+                type="button"
+                class="goods-table-image-button"
+                :aria-label="`查看 ${mobileGoodsTitle(row)} 商品大图`"
+                @click.stop="openGoodsImagePreview(row)"
+              >
+                <img :src="apiAssetUrl(resolveGoodsCoverImage(row))" :alt="`${mobileGoodsTitle(row)} 商品图片`" loading="lazy" />
+              </button>
+              <span v-else class="goods-table-image-empty">-</span>
             </template>
           </el-table-column>
           <el-table-column prop="modelAttribute" label="属性" width="82" />
@@ -359,6 +373,21 @@
         />
       </div>
     </section>
+
+    <el-dialog
+      v-model="goodsImagePreviewVisible"
+      title="商品图片"
+      width="min(720px, 94vw)"
+      append-to-body
+      align-center
+      destroy-on-close
+      class="aqc-app-dialog goods-image-preview-dialog"
+    >
+      <figure class="goods-image-preview-frame">
+        <img v-if="goodsImagePreviewSrc" :src="goodsImagePreviewSrc" :alt="`${goodsImagePreviewTitle} 商品大图`" />
+        <figcaption>{{ goodsImagePreviewTitle }}</figcaption>
+      </figure>
+    </el-dialog>
 
     <MobileBottomSheet
       v-if="isMobileViewport"
@@ -1517,6 +1546,9 @@ const activeMobileGoods = ref(null)
 const mobileGoodsActionVisible = ref(false)
 const mobileGoodsDetailVisible = ref(false)
 const mobileGoodsDetailLoading = ref(false)
+const goodsImagePreviewVisible = ref(false)
+const goodsImagePreviewSrc = ref('')
+const goodsImagePreviewTitle = ref('')
 const distributionDialogVisible = ref(false)
 const distributionLoading = ref(false)
 const distributionItem = ref(null)
@@ -1906,6 +1938,16 @@ function resolveGoodsCoverImage(item) {
     return coverImage
   }
   return parseGoodsImageList(item?.imageList || item?.image_list)[0] || ''
+}
+
+function openGoodsImagePreview(row) {
+  const image = resolveGoodsCoverImage(row)
+  if (!image) {
+    return
+  }
+  goodsImagePreviewTitle.value = mobileGoodsTitle(row)
+  goodsImagePreviewSrc.value = apiAssetUrl(image)
+  goodsImagePreviewVisible.value = true
 }
 
 function getShanghaiDateString(date = new Date()) {

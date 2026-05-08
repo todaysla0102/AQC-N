@@ -124,12 +124,6 @@
               <div class="mobile-sales-schedule-hint">
                 <span>{{ mobileSalesScheduleLine }}</span>
               </div>
-
-              <div class="mobile-sales-submit-zone">
-                <el-button type="primary" class="sales-entry-submit-primary mobile-sales-submit" :loading="submitting" native-type="submit">
-                  确认录入销售
-                </el-button>
-              </div>
             </el-form>
           </section>
 
@@ -159,6 +153,14 @@
             <el-button type="primary" class="mobile-sales-finish-button" @click="finishMobileSale">完成</el-button>
           </section>
         </transition>
+
+        <Teleport to="body">
+          <div v-if="showMobileSalesEntryFlow && mobileStep === 2" class="mobile-sales-submit-zone">
+            <el-button type="primary" class="sales-entry-submit-primary mobile-sales-submit" :loading="submitting" @click="onSubmit">
+              确认录入销售
+            </el-button>
+          </div>
+        </Teleport>
       </section>
     </template>
 

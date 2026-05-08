@@ -8,7 +8,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from urllib.parse import unquote
 
-from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -78,6 +78,13 @@ SORT_FIELD_MAP = {
     "created_at": AqcGoodsItem.created_at,
 }
 
+IMAGE_SIGNATURES = {
+    ".jpg": (b"\xff\xd8\xff",),
+    ".png": (b"\x89PNG\r\n\x1a\n",),
+    ".gif": (b"GIF87a", b"GIF89a"),
+    ".webp": (b"RIFF",),
+}
+
 
 def _clean_text(value: str | None, max_length: int) -> str:
     return clean_goods_text(value, max_length)
@@ -106,6 +113,21 @@ def _image_suffix_for_content_type(content_type: str, fallback_name: str) -> str
         return ".gif"
     if suffix in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
         return ".jpg" if suffix == ".jpeg" else suffix
+    return None
+
+
+def _detect_image_suffix(body: bytes, content_type: str, fallback_name: str) -> str | None:
+    declared_suffix = _image_suffix_for_content_type(content_type, fallback_name)
+    if declared_suffix is None:
+        return None
+    if declared_suffix == ".jpg" and body.startswith(IMAGE_SIGNATURES[".jpg"]):
+        return ".jpg"
+    if declared_suffix == ".png" and body.startswith(IMAGE_SIGNATURES[".png"]):
+        return ".png"
+    if declared_suffix == ".gif" and body.startswith(IMAGE_SIGNATURES[".gif"]):
+        return ".gif"
+    if declared_suffix == ".webp" and len(body) >= 12 and body.startswith(b"RIFF") and body[8:12] == b"WEBP":
+        return ".webp"
     return None
 
 
@@ -1171,10 +1193,11 @@ async def upload_goods_item_image(
     if not body:
         return {"success": False, "message": "请选择图片文件"}
     if len(body) > int(settings.aqc_upload_max_bytes):
-        return {"success": False, "message": "图片大小不能超过 8MB"}
+        max_mb = max(1, round(int(settings.aqc_upload_max_bytes) / 1024 / 1024))
+        raise HTTPException(status_code=413, detail=f"图片大小不能超过 {max_mb}MB")
 
     safe_name = _safe_upload_filename(x_file_name)
-    suffix = _image_suffix_for_content_type(request.headers.get("content-type", ""), safe_name)
+    suffix = _detect_image_suffix(body, request.headers.get("content-type", ""), safe_name)
     if suffix is None:
         return {"success": False, "message": "仅支持 jpg、png、webp、gif 图片"}
 
@@ -1184,7 +1207,9 @@ async def upload_goods_item_image(
     target_dir.mkdir(parents=True, exist_ok=True)
     filename = f"{timestamp}-{digest}{suffix}"
     target_path = target_dir / filename
-    target_path.write_bytes(body)
+    temp_path = target_path.with_suffix(f"{target_path.suffix}.tmp")
+    temp_path.write_bytes(body)
+    temp_path.replace(target_path)
     url = f"{settings.aqc_upload_url_prefix}/goods/manual/{int(item_id)}/{filename}"
     return {"success": True, "message": "图片上传成功", "url": url}
 

@@ -195,7 +195,7 @@
 
   .mobile-sales-input-panel {
     overflow-y: auto;
-    padding-bottom: 0;
+    padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
   }
 
   .mobile-sales-locate-panel {
@@ -500,13 +500,14 @@
   }
 
   .mobile-sales-submit-zone {
-    margin-top: auto;
-    margin-inline: -14px;
-    position: sticky;
+    position: fixed;
+    left: 0;
+    right: 0;
     bottom: 0;
-    z-index: 8;
+    z-index: 1200;
     padding: 10px 14px calc(12px + env(safe-area-inset-bottom, 0px));
-    background: linear-gradient(to top, var(--bg-primary) 74%, transparent);
+    background: linear-gradient(to top, var(--bg-primary) 78%, color-mix(in srgb, var(--bg-primary) 70%, transparent));
+    box-shadow: 0 -18px 36px rgba(17, 17, 17, 0.1);
   }
 
   .mobile-sales-submit,
@@ -8985,6 +8986,62 @@ button.work-order-type-card {
   font-size: 13px;
 }
 
+.goods-table-image-button {
+  appearance: none;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--field-bg) 88%, transparent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: zoom-in;
+}
+
+.goods-table-image-button:hover {
+  border-color: color-mix(in srgb, var(--accent-color) 48%, var(--border-light));
+  background: color-mix(in srgb, var(--accent-color) 10%, var(--field-bg));
+}
+
+.goods-table-image-button img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.goods-table-image-empty {
+  color: var(--text-light);
+  font-weight: 700;
+}
+
+.goods-image-preview-frame {
+  margin: 0;
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+}
+
+.goods-image-preview-frame img {
+  max-width: 100%;
+  max-height: min(68vh, 680px);
+  object-fit: contain;
+  border-radius: 16px;
+  border: 1px solid var(--border-light);
+  background: color-mix(in srgb, var(--field-bg) 88%, transparent);
+}
+
+.goods-image-preview-frame figcaption {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
 .goods-stock-pill {
   display: inline-flex;
   align-items: center;
@@ -9477,6 +9534,35 @@ button.work-order-type-card {
 .goods-main-table .el-table__header-wrapper th.el-table__cell,
 .goods-main-table .el-table__fixed-header-wrapper th.el-table__cell {
   background: color-mix(in srgb, var(--bg-elevated) 96%, var(--fixed-column-surface)) !important;
+}
+
+.goods-table-sticky-shell {
+  overflow: visible !important;
+}
+
+.goods-table-sticky-shell .goods-main-table {
+  overflow: visible !important;
+}
+
+.goods-table-sticky-shell .goods-main-table .el-table__header-wrapper {
+  position: sticky;
+  top: 0;
+  z-index: 38;
+  background: color-mix(in srgb, var(--bg-elevated) 96%, var(--fixed-column-surface));
+  box-shadow: 0 10px 18px color-mix(in srgb, var(--fixed-column-shadow) 56%, transparent);
+}
+
+.goods-table-sticky-shell .goods-main-table .el-table__fixed-header-wrapper {
+  position: sticky;
+  top: 0;
+  z-index: 48 !important;
+  background: var(--fixed-column-surface) !important;
+}
+
+.goods-table-sticky-shell .goods-main-table .el-table__header-wrapper th.el-table__cell,
+.goods-table-sticky-shell .goods-main-table .el-table__fixed-header-wrapper th.el-table__cell {
+  position: relative;
+  z-index: 2;
 }
 
 .el-table tr:hover > td.aqc-fixed-left-column,

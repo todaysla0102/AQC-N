@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import tempfile
+import hashlib
+import re
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
@@ -10,6 +12,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from ..config import settings
 from ..database import get_db
 from ..deps import require_permissions, to_iso
 from ..goods_attributes import (
@@ -78,6 +81,32 @@ SORT_FIELD_MAP = {
 
 def _clean_text(value: str | None, max_length: int) -> str:
     return clean_goods_text(value, max_length)
+
+
+def _safe_upload_filename(value: str | None) -> str:
+    raw_name = unquote(str(value or "goods-image").strip()) or "goods-image"
+    name = Path(raw_name).name
+    stem = re.sub(r"[^A-Za-z0-9_.-]+", "-", Path(name).stem).strip(".-")[:72] or "goods-image"
+    suffix = Path(name).suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+        suffix = ".jpg"
+    return f"{stem}{suffix}"
+
+
+def _image_suffix_for_content_type(content_type: str, fallback_name: str) -> str | None:
+    content_type = str(content_type or "").split(";", 1)[0].strip().lower()
+    suffix = Path(fallback_name).suffix.lower()
+    if content_type in {"image/jpeg", "image/jpg"}:
+        return ".jpg"
+    if content_type == "image/png":
+        return ".png"
+    if content_type == "image/webp":
+        return ".webp"
+    if content_type == "image/gif":
+        return ".gif"
+    if suffix in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+        return ".jpg" if suffix == ".jpeg" else suffix
+    return None
 
 
 def _to_amount(value: float | int | str | None) -> Decimal:
@@ -1124,6 +1153,40 @@ def get_goods_item_detail(
     if item is None:
         return {"success": False, "item": None}
     return {"success": True, "item": _to_goods_out(item)}
+
+
+@router.post("/items/{item_id}/images/upload")
+async def upload_goods_item_image(
+    item_id: int,
+    request: Request,
+    x_file_name: str | None = Header(default=None, alias="X-File-Name"),
+    _user: AqcUser = Depends(require_permissions("goods.write")),
+    db: Session = Depends(get_db),
+):
+    item = _load_goods_item_detail(db, item_id)
+    if item is None:
+        return {"success": False, "message": "商品不存在"}
+
+    body = await request.body()
+    if not body:
+        return {"success": False, "message": "请选择图片文件"}
+    if len(body) > int(settings.aqc_upload_max_bytes):
+        return {"success": False, "message": "图片大小不能超过 8MB"}
+
+    safe_name = _safe_upload_filename(x_file_name)
+    suffix = _image_suffix_for_content_type(request.headers.get("content-type", ""), safe_name)
+    if suffix is None:
+        return {"success": False, "message": "仅支持 jpg、png、webp、gif 图片"}
+
+    digest = hashlib.sha1(body).hexdigest()[:16]
+    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    target_dir = Path(settings.aqc_upload_root) / "goods" / "manual" / str(int(item_id))
+    target_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{timestamp}-{digest}{suffix}"
+    target_path = target_dir / filename
+    target_path.write_bytes(body)
+    url = f"{settings.aqc_upload_url_prefix}/goods/manual/{int(item_id)}/{filename}"
+    return {"success": True, "message": "图片上传成功", "url": url}
 
 
 @router.get("/items/{item_id}/inventory", response_model=GoodsInventoryResponse)

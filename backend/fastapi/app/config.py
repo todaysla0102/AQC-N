@@ -72,6 +72,10 @@ class Settings:
         self.aqco_legacy_bridge_base = os.getenv("AQCO_LEGACY_BRIDGE_BASE", "https://wx.whaqc.cn/api").strip().rstrip("/")
         self.aqco_legacy_bridge_timeout = _to_int("AQCO_LEGACY_BRIDGE_TIMEOUT", 20)
 
+        self.aqc_upload_root = os.getenv("AQC_UPLOAD_ROOT", "/uploads").strip() or "/uploads"
+        self.aqc_upload_url_prefix = os.getenv("AQC_UPLOAD_URL_PREFIX", "/uploads").strip().rstrip("/") or "/uploads"
+        self.aqc_upload_max_bytes = _to_int("AQC_UPLOAD_MAX_BYTES", 8 * 1024 * 1024)
+
         self.order_upload_api_url = os.getenv(
             "AQC_ORDER_UPLOAD_API_URL",
             "https://b.kuaidi100.com/v5/open/api/send",

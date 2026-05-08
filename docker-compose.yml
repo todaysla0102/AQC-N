@@ -68,8 +68,12 @@ services:
       AQC_ORDER_UPLOAD_SENDER_NAME: ${AQC_ORDER_UPLOAD_SENDER_NAME:-}
       AQC_ORDER_UPLOAD_SENDER_MOBILE: ${AQC_ORDER_UPLOAD_SENDER_MOBILE:-}
       AQC_ORDER_UPLOAD_SENDER_ADDR: ${AQC_ORDER_UPLOAD_SENDER_ADDR:-}
+      AQC_UPLOAD_ROOT: ${AQC_UPLOAD_ROOT:-/uploads}
+      AQC_UPLOAD_URL_PREFIX: ${AQC_UPLOAD_URL_PREFIX:-/uploads}
+      AQC_UPLOAD_MAX_BYTES: ${AQC_UPLOAD_MAX_BYTES:-8388608}
     volumes:
       - ./legacy-assets/aqc-o/database:/legacy-data:ro
+      - ./uploads:/uploads
     mem_limit: ${API_MEM_LIMIT:-640m}
     expose:
       - "8000"

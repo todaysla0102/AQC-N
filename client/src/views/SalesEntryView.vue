@@ -111,14 +111,7 @@
                 </el-form-item>
                 <el-form-item v-if="showShopSelector" label="销售店铺">
                   <el-select v-model="form.shopId" filterable clearable class="full-width" placeholder="销售店铺" @visible-change="onShopSelectVisible" @change="onShopChange">
-                    <el-option v-for="option in storeOptions" :key="option.id" :label="formatShopSelectedLabel(option)" :value="option.id">
-                      {{ formatShopMenuLabel(option) }}
-                    </el-option>
-                  </el-select>
-                </el-form-item>
-                <el-form-item v-if="showShipShopSelector" label="发货店铺">
-                  <el-select v-model="form.shipShopId" filterable clearable class="full-width" placeholder="发货店铺" @visible-change="onShopSelectVisible" @change="onShipShopChange">
-                    <el-option v-for="option in shipLocationOptions" :key="`ship-${option.id}`" :label="formatShopSelectedLabel(option)" :value="option.id">
+                    <el-option v-for="option in storeOptions" :key="option.id" :label="formatShopMenuLabel(option)" :value="option.id">
                       {{ formatShopMenuLabel(option) }}
                     </el-option>
                   </el-select>
@@ -126,6 +119,10 @@
                 <button type="button" class="mobile-sales-more-button" aria-label="更多选项" @click="mobileMoreOptionsVisible = true">
                   <el-icon><MoreFilled /></el-icon>
                 </button>
+              </div>
+
+              <div class="mobile-sales-schedule-hint">
+                <span>{{ mobileSalesScheduleLine }}</span>
               </div>
 
               <div class="mobile-sales-submit-zone">
@@ -623,6 +620,13 @@
       :expanded-snap="0.9"
     >
       <el-form label-position="top" class="mobile-sales-more-form">
+        <el-form-item v-if="showShipShopSelector" label="发货店铺">
+          <el-select v-model="form.shipShopId" filterable clearable class="full-width" placeholder="请选择发货店铺" @visible-change="onShopSelectVisible" @change="onShipShopChange">
+            <el-option v-for="option in shipLocationOptions" :key="`ship-${option.id}`" :label="formatShopMenuLabel(option)" :value="option.id">
+              {{ formatShopMenuLabel(option) }}
+            </el-option>
+          </el-select>
+        </el-form-item>
         <el-form-item label="优惠券（元）">
           <el-input-number v-model="form.couponAmount" :min="0" :step="0.01" :precision="2" :max="99999999" class="full-width" />
         </el-form-item>
@@ -858,6 +862,7 @@ const mobileDistributionVisible = ref(false)
 const mobileSearchExpanded = ref(false)
 const mobileSearchInputRef = ref(null)
 const mobileSubmittedSale = ref(null)
+const mobileTodayScheduleShopName = ref('')
 const mobileSuccessStats = reactive({
   personalAmount: 0,
   shopAmount: 0,
@@ -1073,6 +1078,13 @@ const mobileDiscountDisplay = computed(() => {
   return `${discountRateValue.value.toFixed(2)}折`
 })
 const mobilePriceHintVisible = computed(() => form.goodsId && receivedManuallyEdited.value)
+const mobileSalesScheduleLine = computed(() => {
+  const scheduledShop = String(mobileTodayScheduleShopName.value || '').trim()
+  if (scheduledShop) {
+    return `今日排班店铺：${scheduledShop}`
+  }
+  return `所属店铺：${String(defaultUserShopName.value || '').trim() || '未设置'}`
+})
 const mobileSubmittedAmount = computed(() => Number(mobileSubmittedSale.value?.receivedAmount || form.receivedAmount || 0))
 const mobileEntryDirty = computed(() => {
   if (mobileStep.value > 1 || form.goodsId) {
@@ -1512,6 +1524,38 @@ async function loadShopOptions() {
     : [...stores, ...remoteWarehouses]
   storeOptions.value = stores.sort((left, right) => Number(left.id || 0) - Number(right.id || 0))
   shopOptions.value = locations.sort((left, right) => Number(left.id || 0) - Number(right.id || 0))
+}
+
+async function loadMobileTodaySchedule() {
+  if (!showMobileSalesEntryFlow.value) {
+    return
+  }
+  const today = getShanghaiDateTimeLocalValue().slice(0, 10)
+  const payload = await apiGet('/shop-schedules/me/summary', {
+    token: authStore.token,
+    query: {
+      period: 'today',
+      date_from: today,
+      date_to: today,
+    },
+    timeoutMs: 12000,
+  })
+  if (!payload?.success) {
+    mobileTodayScheduleShopName.value = ''
+    return
+  }
+  const shifts = Array.isArray(payload.todayShifts) ? payload.todayShifts : []
+  const names = []
+  const seen = new Set()
+  for (const item of shifts) {
+    const name = String(item?.shopName || '').trim()
+    if (!name || seen.has(name)) {
+      continue
+    }
+    seen.add(name)
+    names.push(name)
+  }
+  mobileTodayScheduleShopName.value = names.join(' / ')
 }
 
 function mergeShopOptionRows(primaryRows = [], fallbackRows = []) {
@@ -2296,7 +2340,7 @@ watch(
 
 onMounted(() => {
   void (async () => {
-    await Promise.all([loadMeta(), loadShopOptions(), loadSalespersonOptions()])
+    await Promise.all([loadMeta(), loadShopOptions(), loadSalespersonOptions(), loadMobileTodaySchedule()])
     if (defaultUserShopId.value) {
       form.shopId = defaultUserShopId.value
       form.shopName = defaultUserShopName.value

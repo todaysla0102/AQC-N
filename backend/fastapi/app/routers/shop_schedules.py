@@ -784,7 +784,32 @@ def get_my_schedule_summary(
     shift_count = len(rows)
     work_days = len({item.work_date.date().isoformat() for item in rows})
 
-    tomorrow = _today_local() + timedelta(days=1)
+    today = _today_local()
+    today_dt = datetime(today.year, today.month, today.day)
+    today_rows = (
+        db.execute(
+            select(AqcShopScheduleEntry, AqcShop)
+            .join(AqcShop, AqcShop.id == AqcShopScheduleEntry.shop_id)
+            .where(
+                AqcShopScheduleEntry.salesperson_id == int(user.id),
+                AqcShopScheduleEntry.work_date == today_dt,
+            )
+            .order_by(AqcShopScheduleEntry.shop_id.asc(), AqcShopScheduleEntry.shift_type.asc())
+        )
+        .all()
+    )
+    today_shifts = [
+        MyScheduleTomorrowShiftOut(
+            shopId=int(shop.id),
+            shopName=str(shop.name or ""),
+            shiftType=str(item.shift_type or "morning"),
+            shiftLabel=SHIFT_LABELS.get(str(item.shift_type or "morning"), "排班"),
+        )
+        for item, shop in today_rows
+        if str(item.shift_type or "") in SHIFT_LABELS
+    ]
+
+    tomorrow = today + timedelta(days=1)
     tomorrow_dt = datetime(tomorrow.year, tomorrow.month, tomorrow.day)
     tomorrow_rows = (
         db.execute(
@@ -817,6 +842,7 @@ def get_my_schedule_summary(
         "dateTo": end_text,
         "shiftCount": shift_count,
         "workDays": work_days,
+        "todayShifts": today_shifts,
         "tomorrowShifts": tomorrow_shifts,
     }
 

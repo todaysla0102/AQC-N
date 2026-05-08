@@ -547,7 +547,7 @@
           <span>{{ activeMobileRecord.discountDisplay && activeMobileRecord.discountDisplay !== '/' ? `${activeMobileRecord.discountDisplay}折` : '原价' }}</span>
         </div>
         <div class="sales-record-mobile-detail-grid">
-          <article v-for="item in mobileRecordDetailItems" :key="item.label">
+          <article v-for="item in mobileRecordDetailItems" :key="item.label" :class="{ wide: item.wide }">
             <span>{{ item.label }}</span>
             <strong>{{ item.value || '-' }}</strong>
           </article>
@@ -1356,7 +1356,7 @@ const mobileRecordDetailItems = computed(() => {
     { label: '订单号', value: row.orderNum },
     { label: '客户姓名', value: row.customerName },
     { label: '渠道', value: row.channel },
-    { label: '备注', value: row.note },
+    { label: '备注', value: row.note, wide: true },
   ].filter((item) => String(item.value || '').trim())
 })
 

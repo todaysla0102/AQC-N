@@ -895,6 +895,7 @@ class MyScheduleSummaryResponse(BaseModel):
     dateTo: str
     shiftCount: int = 0
     workDays: int = 0
+    todayShifts: list[MyScheduleTomorrowShiftOut] = Field(default_factory=list)
     tomorrowShifts: list[MyScheduleTomorrowShiftOut] = Field(default_factory=list)
 
 

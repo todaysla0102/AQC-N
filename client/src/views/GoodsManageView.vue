@@ -365,8 +365,8 @@
       v-model="mobileGoodsActionVisible"
       :title="mobileGoodsTitle(activeMobileGoods)"
       subtitle="商品管理"
-      :initial-snap="0.42"
-      :expanded-snap="0.68"
+      :initial-snap="0.62"
+      :expanded-snap="0.82"
     >
       <section class="work-order-category-chooser sales-record-mobile-action-menu">
         <button type="button" class="work-order-category-card" @click="openMobileGoodsDetail">
@@ -397,6 +397,9 @@
       :expanded-snap="0.92"
     >
       <section class="sales-record-mobile-detail" v-if="activeMobileGoods" v-loading="mobileGoodsDetailLoading">
+        <figure v-if="mobileGoodsDetailImageSrc" class="goods-mobile-detail-image">
+          <img :src="mobileGoodsDetailImageSrc" :alt="`${mobileGoodsTitle(activeMobileGoods)} 商品图片`" loading="lazy" />
+        </figure>
         <div class="sales-record-mobile-detail-hero">
           <strong>¥ {{ formatMoney(activeMobileGoods.price) }}</strong>
           <span>{{ mobileGoodsDetailHeroText }}</span>
@@ -766,8 +769,8 @@
 
       <div class="goods-flow-choice">
         <button type="button" class="goods-flow-card" @click="openPropertyEditorFromMenu">
-          <strong>商品属性</strong>
-          <p>继续编辑品牌、系列、型号、价格和条码。</p>
+          <strong>商品属性与图片</strong>
+          <p>继续编辑品牌、系列、型号、价格、条码和商品图片。</p>
         </button>
 
         <button type="button" class="goods-flow-card accent" @click="openQuantityEditorFromMenu">
@@ -864,6 +867,34 @@
                 class="full-width"
               />
             </el-form-item>
+
+            <section class="dialog-span-full goods-image-manager">
+              <header>
+                <div>
+                  <span>商品图片</span>
+                  <p>用于商品详情和移动端录入销售展示，可设置主图或删除旧图。</p>
+                </div>
+                <el-button type="primary" plain :loading="imageUploading" @click="openImageUploadPicker">添加图片</el-button>
+              </header>
+              <input
+                ref="imageUploadInputRef"
+                class="goods-image-file-input"
+                type="file"
+                accept="image/*"
+                @change="onGoodsImageFileChange"
+              />
+              <div v-if="formImageItems.length" class="goods-image-grid">
+                <article v-for="image in formImageItems" :key="image.url" class="goods-image-card" :class="{ active: image.isCover }">
+                  <img :src="image.src" :alt="`${displayName} 商品图片`" loading="lazy" />
+                  <span v-if="image.isCover">主图</span>
+                  <div class="goods-image-actions">
+                    <button type="button" :disabled="image.isCover" @click="setCoverImage(image.url)">设为主图</button>
+                    <button type="button" class="danger" @click="removeGoodsImage(image.url)">删除</button>
+                  </div>
+                </article>
+              </div>
+              <div v-else class="goods-image-empty">暂无商品图片</div>
+            </section>
 
             <el-form-item label="条码" class="dialog-span-full">
               <div class="barcode-compose">
@@ -1403,7 +1434,7 @@ import ResponsiveDialog from '../components/ResponsiveDialog.vue'
 import ResponsiveTableActions from '../components/ResponsiveTableActions.vue'
 import { useMobileViewport } from '../composables/useMobileViewport'
 import { useBarcodeScanner } from '../composables/useBarcodeScanner'
-import { apiDelete, apiGet, apiPost, apiPut, apiUpload } from '../services/api'
+import { apiAssetUrl, apiDelete, apiGet, apiPost, apiPut, apiUpload } from '../services/api'
 import { useAuthStore } from '../stores/auth'
 import { confirmDestructiveAction } from '../utils/confirm'
 import { buildLogCenterQuery } from '../utils/logCenter'
@@ -1480,6 +1511,8 @@ const editingId = ref(0)
 const detailLoading = ref(false)
 const editMenuVisible = ref(false)
 const editMenuTarget = ref(null)
+const imageUploadInputRef = ref(null)
+const imageUploading = ref(false)
 const activeMobileGoods = ref(null)
 const mobileGoodsActionVisible = ref(false)
 const mobileGoodsDetailVisible = ref(false)
@@ -1559,6 +1592,8 @@ const form = reactive({
   modelAttribute: '-',
   barcode: '',
   price: 0,
+  coverImage: '',
+  imageList: '[]',
 })
 
 const goodsAttributeOptions = [
@@ -1625,7 +1660,7 @@ async function onDialogScannerStageFocus(event) {
 }
 
 const displayName = computed(() => buildItemName(form))
-const propertyDialogTitle = computed(() => '商品属性')
+const propertyDialogTitle = computed(() => '商品属性与图片')
 const resolvedBarcodePreview = computed(() => cleanText(form.barcode))
 const salesRangePresetOptions = [
   { value: 'all', label: '总销量' },
@@ -1704,6 +1739,7 @@ const mobileGoodsDetailHeroText = computed(() => {
     mobileGoodsAttribute(row),
   ].filter(Boolean).join(' · ')
 })
+const mobileGoodsDetailImageSrc = computed(() => apiAssetUrl(resolveGoodsCoverImage(activeMobileGoods.value)))
 const mobileGoodsDetailItems = computed(() => {
   const row = activeMobileGoods.value
   if (!row) {
@@ -1721,6 +1757,14 @@ const mobileGoodsDetailItems = computed(() => {
     { label: '条码', value: row.barcode },
     { label: '更新时间', value: row.updatedAt },
   ].filter((item) => String(item.value ?? '').trim())
+})
+const formImageItems = computed(() => {
+  const coverImage = cleanText(form.coverImage)
+  return normalizeGoodsImages(form.imageList, coverImage).map((url) => ({
+    url,
+    src: apiAssetUrl(url),
+    isCover: url === coverImage,
+  }))
 })
 const distributionModelTitle = computed(() => cleanText(distributionItem.value?.model) || '未设置型号')
 const inventoryLogModelTitle = computed(() => buildItemName(inventoryLogTarget.value) || '当前商品')
@@ -1821,6 +1865,47 @@ function formatMoney(value) {
 
 function cleanText(value) {
   return String(value || '').trim()
+}
+
+function parseGoodsImageList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => cleanText(item)).filter(Boolean)
+  }
+  const text = cleanText(value)
+  if (!text || text === '[]') {
+    return []
+  }
+  try {
+    const parsed = JSON.parse(text)
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => cleanText(item)).filter(Boolean)
+    }
+  } catch (error) {
+    return []
+  }
+  return []
+}
+
+function normalizeGoodsImages(imageList, coverImage = '') {
+  const rows = []
+  const seen = new Set()
+  for (const image of [coverImage, ...parseGoodsImageList(imageList)]) {
+    const url = cleanText(image)
+    if (!url || seen.has(url)) {
+      continue
+    }
+    seen.add(url)
+    rows.push(url)
+  }
+  return rows
+}
+
+function resolveGoodsCoverImage(item) {
+  const coverImage = cleanText(item?.coverImage || item?.cover_image)
+  if (coverImage) {
+    return coverImage
+  }
+  return parseGoodsImageList(item?.imageList || item?.image_list)[0] || ''
 }
 
 function getShanghaiDateString(date = new Date()) {
@@ -2147,6 +2232,8 @@ function resetForm() {
   form.modelAttribute = '-'
   form.barcode = ''
   form.price = 0
+  form.coverImage = ''
+  form.imageList = '[]'
 }
 
 function resetCreateFlowState() {
@@ -2967,6 +3054,8 @@ async function openPropertyEditor(targetRow) {
     form.modelAttribute = item.modelAttribute || '-'
     form.barcode = item.barcode || ''
     form.price = Number(item.price || 0)
+    form.coverImage = item.coverImage || ''
+    form.imageList = JSON.stringify(normalizeGoodsImages(item.imageList, item.coverImage), null, 0)
     await loadDialogMeta(form.brand)
   } finally {
     detailLoading.value = false
@@ -2975,6 +3064,57 @@ async function openPropertyEditor(targetRow) {
 
 function openPropertyEditorFromMenu() {
   void openPropertyEditor(editMenuTarget.value)
+}
+
+function syncFormImages(images) {
+  const rows = normalizeGoodsImages(images, '')
+  form.coverImage = rows[0] || ''
+  form.imageList = JSON.stringify(rows)
+}
+
+function setCoverImage(url) {
+  const target = cleanText(url)
+  if (!target) {
+    return
+  }
+  const images = normalizeGoodsImages(form.imageList, form.coverImage).filter((item) => item !== target)
+  syncFormImages([target, ...images])
+}
+
+function removeGoodsImage(url) {
+  const target = cleanText(url)
+  const images = normalizeGoodsImages(form.imageList, form.coverImage).filter((item) => item !== target)
+  syncFormImages(images)
+}
+
+function openImageUploadPicker() {
+  imageUploadInputRef.value?.click?.()
+}
+
+async function onGoodsImageFileChange(event) {
+  const file = event?.target?.files?.[0]
+  if (!file || !editingId.value) {
+    return
+  }
+  if (!String(file.type || '').startsWith('image/')) {
+    ElMessage.warning('请选择图片文件')
+    event.target.value = ''
+    return
+  }
+  imageUploading.value = true
+  const payload = await apiUpload(`/goods/items/${editingId.value}/images/upload`, file, {
+    token: authStore.token,
+    timeoutMs: 30000,
+  })
+  imageUploading.value = false
+  event.target.value = ''
+  if (!payload?.success || !payload.url) {
+    ElMessage.error(payload?.message || '图片上传失败')
+    return
+  }
+  const images = normalizeGoodsImages(form.imageList, form.coverImage)
+  syncFormImages([...images, payload.url])
+  ElMessage.success(payload.message || '图片上传成功')
 }
 
 async function fetchInventoryPayload(itemId) {
@@ -3264,6 +3404,7 @@ function openQuantityEditorFromMenu() {
 function buildBasePayload() {
   const safePrice = Number(form.price || 0)
   const safeBarcode = cleanText(form.barcode)
+  const images = normalizeGoodsImages(form.imageList, form.coverImage)
 
   return {
     name: displayName.value,
@@ -3273,6 +3414,8 @@ function buildBasePayload() {
     model: cleanText(form.model),
     modelAttribute: cleanText(form.modelAttribute) || '-',
     barcode: safeBarcode,
+    coverImage: images[0] || '',
+    imageList: JSON.stringify(images),
     price: safePrice,
     originalPrice: safePrice,
     salePrice: safePrice,

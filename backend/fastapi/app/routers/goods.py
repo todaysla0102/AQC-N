@@ -85,7 +85,6 @@ IMAGE_SIGNATURES = {
     ".webp": (b"RIFF",),
 }
 
-
 def _clean_text(value: str | None, max_length: int) -> str:
     return clean_goods_text(value, max_length)
 

@@ -578,6 +578,14 @@
                 />
               </div>
 
+              <div v-if="form.orderType === 'transfer'" class="sales-filter-field">
+                <label class="sales-filter-label">批量商品调拨单</label>
+                <el-switch
+                  v-model="form.batchTransfer"
+                  @change="onBatchTransferChange"
+                />
+              </div>
+
               <div v-if="form.orderType === 'sale' && form.saleAffectsInventory" class="sales-filter-field">
                 <label class="sales-filter-label">发货店铺/仓库</label>
                 <el-select
@@ -687,7 +695,32 @@
           </el-form>
         </section>
 
-        <section v-show="editorStep === 2" class="work-order-editor-shell">
+        <section v-show="isBatchTransferMode && editorStep === 2" class="card-surface work-order-allocation-settings-panel">
+          <div class="panel-head-simple">
+            <div>
+              <h3>选择收货店铺/仓库</h3>
+              <p>点位的选择顺序会直接决定后续明细表格的列顺序。</p>
+            </div>
+          </div>
+          <div class="goods-compare-location-grid work-order-allocation-target-grid">
+            <button
+              v-for="item in batchTransferTargetOptions"
+              :key="`batch-transfer-target-${item.id}`"
+              type="button"
+              class="goods-compare-location-card"
+              :class="{ active: batchTransferTargetIds.includes(item.id) }"
+              @click="toggleBatchTransferTarget(item.id)"
+            >
+              <span v-if="resolveBatchTransferTargetOrder(item.id) > 0" class="goods-compare-location-order">
+                {{ resolveBatchTransferTargetOrder(item.id) }}
+              </span>
+              <strong>{{ displayShopName(item.name) }}</strong>
+              <small>{{ formatShopType(item.shopType) }}</small>
+            </button>
+          </div>
+        </section>
+
+        <section v-show="editorStep === editorDetailStep" class="work-order-editor-shell">
           <section class="card-surface work-order-editor-summary">
             <div class="work-order-detail-title">
               <div>
@@ -750,7 +783,75 @@
               </div>
             </div>
 
-            <template v-if="!isSaleExchangeType">
+            <template v-if="isBatchTransferMode">
+              <div class="work-order-add-row-bar">
+                <el-button @click="openBatchEntryDialog">批量录入商品</el-button>
+                <el-button @click="addItemRows(1)">新增一行</el-button>
+              </div>
+              <div class="table-shell open-table-shell work-order-allocation-table-shell">
+                <el-table
+                  class="work-order-allocation-table"
+                  :data="editorPagedItems"
+                  border
+                  stripe
+                  row-key="localId"
+                  empty-text="请新增待调拨商品"
+                >
+                  <el-table-column prop="goodsName" label="商品名称" min-width="260" fixed="left">
+                    <template #default="{ row }">
+                      <div class="work-order-allocation-goods-cell">
+                        <el-autocomplete
+                          v-model="row.goodsName"
+                          class="full-width"
+                          :fetch-suggestions="(queryString, cb) => fetchGoodsSuggestions(queryString, cb)"
+                          select-when-unmatched
+                          clearable
+                          placeholder="输入型号，支持联想匹配"
+                          @select="(item) => handleGoodsSuggestionSelect(row.localId, item)"
+                          @keyup.enter="(event) => handleRowGoodsEnter(row, event)"
+                          @change="() => onRowGoodsCommit(row)"
+                          @input="() => onRowGoodsInput(row)"
+                        />
+                        <small>品牌 {{ row.brand || '-' }} · 系列 {{ row.series || '-' }} · 单价 ¥ {{ formatMoney(row.unitPrice) }} · 原单/库存数量 {{ Number(row.sourceStock || 0) }}，已分配 {{ batchTransferRowAssignedQuantity(row) }}</small>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column
+                    v-for="target in selectedBatchTransferTargets"
+                    :key="`batch-transfer-target-column-${target.id}`"
+                    :label="displayShopName(target.name)"
+                    min-width="150"
+                    align="center"
+                  >
+                    <el-table-column label="变动库存" min-width="112" align="center">
+                      <template #default="{ row }">
+                        <input
+                          :value="String(getBatchTransferQuantity(row, target.id))"
+                          type="number"
+                          min="0"
+                          step="1"
+                          class="allocation-qty-input"
+                          @input="setBatchTransferQuantity(row, target.id, $event?.target?.value)"
+                        />
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="库存" min-width="88" align="center">
+                      <template #default="{ row }">{{ getBatchTransferCurrentStock(row, target.id) }}</template>
+                    </el-table-column>
+                  </el-table-column>
+                  <el-table-column label="操作" :width="itemActionWidth" fixed="right">
+                    <template #default="{ row }">
+                      <ResponsiveTableActions :menu-width="148">
+                        <el-button text @click="clearRowGoods(row)">清空</el-button>
+                        <el-button text type="danger" @click="confirmRemoveItemRow(row.localId)">删除本行</el-button>
+                      </ResponsiveTableActions>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </template>
+
+            <template v-else-if="!isSaleExchangeType">
             <div
               v-if="showQuickAddBar && !isMobileViewport"
               ref="quickAddBarRef"
@@ -1871,7 +1972,7 @@
           <el-button v-if="editorStep < editorStepOptions.length" type="primary" @click="nextEditorStep">下一步</el-button>
           <template v-else>
             <el-button :loading="savingDraft" @click="saveEditor('draft')">保存草稿</el-button>
-            <el-button type="primary" :loading="submitting" @click="saveEditor('pending')">提交审批</el-button>
+            <el-button type="primary" :loading="submitting" @click="saveEditor('pending')">{{ isBatchTransferMode ? '确认生成' : '提交审批' }}</el-button>
           </template>
         </div>
       </template>
@@ -3422,6 +3523,7 @@ const allocationTargetOptions = ref([])
 const allocationApproverOptions = ref([])
 const allocationItemsPage = ref(1)
 const allocationItemsPageSize = ref(20)
+const batchTransferTargetIds = ref([])
 const savingDraft = ref(false)
 const submitting = ref(false)
 const reviewing = ref(false)
@@ -3556,10 +3658,18 @@ const {
   },
 })
 
-const editorStepOptions = [
-  { value: 1, label: '工单信息' },
-  { value: 2, label: '工单明细' },
-]
+const editorStepOptions = computed(() => (
+  isBatchTransferMode.value
+    ? [
+      { value: 1, label: '工单信息' },
+      { value: 2, label: '收货点位' },
+      { value: 3, label: '调拨明细' },
+    ]
+    : [
+      { value: 1, label: '工单信息' },
+      { value: 2, label: '工单明细' },
+    ]
+))
 const mobileWorkOrderStepOptions = [
   { value: 1, label: '选择工单大类' },
   { value: 2, label: '选择工单类型' },
@@ -3577,6 +3687,7 @@ const form = reactive({
   orderNum: '',
   orderType: 'transfer',
   saleAffectsInventory: false,
+  batchTransfer: false,
   reason: '',
   formDate: defaultDateTimeLocal(),
   sourceShopId: null,
@@ -3677,7 +3788,9 @@ const defaultReason = computed(() => buildDefaultReason())
 const effectiveReason = computed(() => cleanReasonText(form.reason) || defaultReason.value)
 const editorTitle = computed(() => (form.id ? `编辑工单 · ${form.orderNum}` : '新建工单'))
 const showSourceSelector = computed(() => form.orderType !== 'purchase')
-const showTargetSelector = computed(() => form.orderType === 'transfer' || form.orderType === 'purchase')
+const isBatchTransferMode = computed(() => form.orderType === 'transfer' && Boolean(form.batchTransfer))
+const showTargetSelector = computed(() => (form.orderType === 'transfer' && !isBatchTransferMode.value) || form.orderType === 'purchase')
+const editorDetailStep = computed(() => (isBatchTransferMode.value ? 3 : 2))
 const isSaleExchangeType = computed(() => form.orderType === 'sale_exchange')
 const isSalesOrderType = computed(() => ['sale', 'sale_return', 'sale_exchange'].includes(form.orderType))
 const isSaleAffectingInventory = computed(() => form.orderType === 'sale' && form.saleAffectsInventory)
@@ -3695,6 +3808,13 @@ const sourceOptions = computed(() => {
   return meta.storeOptions
 })
 const targetOptions = computed(() => stockLocationOptions.value)
+const batchTransferTargetOptions = computed(() => (
+  stockLocationOptions.value.filter((item) => Number(item.id || 0) !== Number(form.sourceShopId || 0))
+))
+const selectedBatchTransferTargets = computed(() => {
+  const targetMap = new Map(batchTransferTargetOptions.value.map((item) => [Number(item.id || 0), item]))
+  return batchTransferTargetIds.value.map((shopId) => targetMap.get(Number(shopId || 0))).filter(Boolean)
+})
 const shopOptionMap = computed(() => {
   const entries = (meta.shopOptions || []).map((item) => [Number(item.id || 0), item])
   return new Map(entries)
@@ -4752,7 +4872,7 @@ async function confirmMobileGoodsCandidate() {
     quantity,
     sourceStock: Number(candidate.shopQuantity ?? candidate.sourceStock ?? 0),
     targetStock: Number(candidate.secondaryShopQuantity ?? candidate.targetStock ?? candidate.shopQuantity ?? 0),
-  }))
+}))
   row.quantity = quantity
   if (isSaleAffectingInventory.value || target === 'outgoing') {
     row.saleShopId = row.saleShopId || Number(form.sourceShopId || 0) || null
@@ -5221,11 +5341,22 @@ function serializeEditorState() {
     channel: String(item.channel || '').trim(),
     customerName: String(item.customerName || '').trim(),
     remark: String(item.remark || '').trim(),
+    allocations: Object.fromEntries(
+      Object.entries(item.allocations || {}).map(([shopId, target]) => [
+        shopId,
+        {
+          quantity: Number(target?.quantity || 0),
+          currentStock: Number(target?.currentStock || 0),
+        },
+      ]),
+    ),
   })
   return JSON.stringify({
     id: form.id || null,
     orderType: form.orderType || '',
     saleAffectsInventory: Boolean(form.saleAffectsInventory),
+    batchTransfer: Boolean(form.batchTransfer),
+    batchTransferTargetIds: [...batchTransferTargetIds.value],
     reason: cleanReasonText(form.reason),
     formDate: String(form.formDate || '').trim(),
     sourceShopId: form.sourceShopId || null,
@@ -5539,6 +5670,117 @@ function allocationRowAssignedQuantity(row) {
   return (row?.targets || []).reduce((sum, target) => sum + Number(target.quantity || 0), 0)
 }
 
+function resolveBatchTransferTargetOrder(shopId) {
+  const index = batchTransferTargetIds.value.findIndex((item) => Number(item || 0) === Number(shopId || 0))
+  return index >= 0 ? index + 1 : 0
+}
+
+function ensureBatchTransferAllocations(row) {
+  if (!row) {
+    return
+  }
+  const current = row.allocations && typeof row.allocations === 'object' ? row.allocations : {}
+  const next = {}
+  for (const target of selectedBatchTransferTargets.value) {
+    const shopId = Number(target.id || 0)
+    next[shopId] = {
+      quantity: Math.max(0, Number(current[shopId]?.quantity || 0)),
+      currentStock: Number(current[shopId]?.currentStock || 0),
+    }
+  }
+  row.allocations = next
+}
+
+async function hydrateBatchTransferRowStocks(row) {
+  if (!isBatchTransferMode.value || !Number(row?.goodsId || 0)) {
+    return
+  }
+  const snapshot = await loadGoodsInventorySnapshot(row.goodsId, { force: true })
+  row.sourceStock = Number(snapshot[Number(form.sourceShopId || 0)] || 0)
+  ensureBatchTransferAllocations(row)
+  for (const target of selectedBatchTransferTargets.value) {
+    const shopId = Number(target.id || 0)
+    if (!row.allocations[shopId]) {
+      row.allocations[shopId] = { quantity: 0, currentStock: 0 }
+    }
+    row.allocations[shopId].currentStock = Number(snapshot[shopId] || 0)
+  }
+}
+
+function toggleBatchTransferTarget(shopId) {
+  const normalizedId = Number(shopId || 0)
+  if (!normalizedId || normalizedId === Number(form.sourceShopId || 0)) {
+    return
+  }
+  const index = batchTransferTargetIds.value.findIndex((item) => Number(item || 0) === normalizedId)
+  if (index >= 0) {
+    batchTransferTargetIds.value.splice(index, 1)
+  } else {
+    batchTransferTargetIds.value.push(normalizedId)
+  }
+  form.items.forEach((row) => {
+    ensureBatchTransferAllocations(row)
+    void hydrateBatchTransferRowStocks(row)
+  })
+}
+
+function getBatchTransferAllocation(row, shopId) {
+  ensureBatchTransferAllocations(row)
+  return row?.allocations?.[Number(shopId || 0)] || null
+}
+
+function getBatchTransferQuantity(row, shopId) {
+  return Math.max(0, Number(getBatchTransferAllocation(row, shopId)?.quantity || 0))
+}
+
+function setBatchTransferQuantity(row, shopId, nextValue) {
+  const allocation = getBatchTransferAllocation(row, shopId)
+  if (!allocation) {
+    return
+  }
+  const parsed = Number.parseInt(String(nextValue ?? '').trim(), 10)
+  allocation.quantity = Math.max(0, Number.isFinite(parsed) ? parsed : 0)
+  row.quantity = batchTransferRowAssignedQuantity(row)
+  syncRowAmount(row)
+}
+
+function getBatchTransferCurrentStock(row, shopId) {
+  return Number(getBatchTransferAllocation(row, shopId)?.currentStock || 0)
+}
+
+function batchTransferRowAssignedQuantity(row) {
+  ensureBatchTransferAllocations(row)
+  return Object.values(row?.allocations || {}).reduce((sum, target) => sum + Number(target?.quantity || 0), 0)
+}
+
+function buildBatchTransferPayload(statusValue) {
+  return {
+    status: statusValue === 'pending' ? 'pending' : 'draft',
+    reason: effectiveReason.value,
+    formDate: form.formDate || null,
+    sourceShopId: form.sourceShopId || null,
+    approverId: form.approverId || null,
+    groupId: form.groupId || null,
+    targetShopIds: [...batchTransferTargetIds.value],
+    rows: form.items
+      .filter((row) => Number(row.goodsId || 0) > 0)
+      .map((row) => ({
+        goodsId: Number(row.goodsId || 0),
+        goodsName: row.goodsName || '',
+        productCode: row.productCode || '',
+        brand: row.brand || '',
+        series: row.series || '',
+        barcode: row.barcode || '',
+        unitPrice: Number(row.unitPrice || 0),
+        remark: row.remark || '',
+        targets: selectedBatchTransferTargets.value.map((target) => ({
+          shopId: Number(target.id || 0),
+          quantity: getBatchTransferQuantity(row, target.id),
+        })),
+      })),
+  }
+}
+
 function buildAllocationWarnings() {
   const warnings = []
   for (const row of allocationRows.value || []) {
@@ -5833,6 +6075,7 @@ function createRow(preset = {}) {
     remark: '',
     sourceStock: 0,
     targetStock: 0,
+    allocations: {},
     isNewGoods: false,
     ...preset,
   }
@@ -6369,6 +6612,10 @@ function fillRowFromGoods(row, goods) {
   row.sourceStock = primaryStock
   row.targetStock = secondaryStock
   row.isNewGoods = false
+  if (isBatchTransferMode.value) {
+    ensureBatchTransferAllocations(row)
+    void hydrateBatchTransferRowStocks(row)
+  }
   ensureRowSalespersonByShop(row)
   syncRowAmount(row)
 }
@@ -7054,6 +7301,10 @@ function onRowGoodsInput(row) {
   row.goodsId = null
   row.sourceStock = 0
   row.targetStock = 0
+  row.allocations = {}
+  if (isBatchTransferMode.value) {
+    ensureBatchTransferAllocations(row)
+  }
   row.isNewGoods = false
   syncRowAmount(row)
 }
@@ -7136,7 +7387,14 @@ async function confirmRemoveItemRow(rowKey) {
 }
 
 function normalizeFormByType(nextType) {
+  if (nextType !== 'transfer') {
+    form.batchTransfer = false
+    batchTransferTargetIds.value = []
+  }
   if (nextType === 'transfer') {
+    if (form.batchTransfer) {
+      form.targetShopId = null
+    }
     form.supplierName = ''
     form.partnerName = ''
     return
@@ -7254,6 +7512,24 @@ function onSaleAffectsInventoryChange() {
   }
 }
 
+function onBatchTransferChange() {
+  if (form.orderType !== 'transfer') {
+    form.batchTransfer = false
+    batchTransferTargetIds.value = []
+    return
+  }
+  if (form.batchTransfer) {
+    form.targetShopId = null
+    batchTransferTargetIds.value = batchTransferTargetIds.value.filter((shopId) => Number(shopId || 0) !== Number(form.sourceShopId || 0))
+    form.items.forEach((row) => ensureBatchTransferAllocations(row))
+    ElMessage.info('已切换为批量商品调拨单，请先选择收货店铺/仓库')
+  } else {
+    batchTransferTargetIds.value = []
+    form.items.forEach((row) => { row.allocations = {} })
+  }
+  editorStep.value = 1
+}
+
 async function onSaleHeaderShipShopChange(value) {
   const normalizedId = Number(value || 0) || null
   saleShipShopId.value = normalizedId
@@ -7268,6 +7544,7 @@ function changeOrderType(nextType) {
   form.orderType = nextType
   if (nextType === 'sale') {
     form.saleAffectsInventory = true
+    form.batchTransfer = false
   } else {
     saleShipShopId.value = null
   }
@@ -7302,6 +7579,7 @@ function resetForm(nextType = 'transfer') {
   form.orderNum = ''
   form.orderType = nextType
   form.saleAffectsInventory = nextType === 'sale'
+  form.batchTransfer = false
   form.formDate = defaultDateTimeLocal()
   form.reason = ''
   form.sourceShopId = null
@@ -7312,6 +7590,7 @@ function resetForm(nextType = 'transfer') {
   form.groupId = null
   form.groupId = defaultGroupId.value
   saleShipShopId.value = null
+  batchTransferTargetIds.value = []
   form.items = []
   form.exchangeIncomingItems = [createRow({ lineType: 'incoming' })]
   form.exchangeOutgoingItems = [createRow({ lineType: 'outgoing', channel: '门店' })]
@@ -7329,6 +7608,9 @@ function resetForm(nextType = 'transfer') {
 
 function buildPayload(statusValue) {
   normalizeFormByType(form.orderType)
+  if (isBatchTransferMode.value) {
+    return buildBatchTransferPayload(statusValue)
+  }
   return {
     orderType: form.orderType,
     status: statusValue,
@@ -7453,6 +7735,7 @@ function applyOrderToForm(order) {
   form.orderNum = normalizedOrder.orderNum || ''
   form.orderType = normalizedOrder.orderType || 'transfer'
   form.saleAffectsInventory = Boolean(normalizedOrder.saleAffectsInventory)
+  form.batchTransfer = Boolean(normalizedOrder.isBatchTransfer)
   form.reason = normalizedOrder.reason || ''
   form.formDate = String(normalizedOrder.formDate || '').slice(0, 16) || defaultDateTimeLocal()
   form.sourceShopId = normalizedOrder.sourceShopId || null
@@ -7506,6 +7789,9 @@ function applyOrderToForm(order) {
   saleShipShopId.value = form.orderType === 'sale' && form.saleAffectsInventory
     ? (Number(form.items[0]?.shipShopId || form.sourceShopId || 0) || null)
     : null
+  if (!form.batchTransfer) {
+    batchTransferTargetIds.value = []
+  }
   ensureAtLeastOneRow()
   batchRowCount.value = 3
   editorStep.value = 1
@@ -7515,6 +7801,34 @@ function applyOrderToForm(order) {
   editorSortState.order = ''
   categoryDraft.category = resolveOrderCategory(form.orderType)
   normalizeEditorItemsPage()
+}
+
+function applyBatchTransferDraftResponse(payload) {
+  const order = payload?.order
+  const draft = payload?.draft
+  if (!order || !draft) {
+    return
+  }
+  applyOrderToForm({ ...order, isBatchTransfer: true })
+  batchTransferTargetIds.value = Array.isArray(draft.targetShopIds)
+    ? draft.targetShopIds.map((item) => Number(item || 0)).filter((item) => item > 0)
+    : []
+  const draftRowMap = new Map((draft.rows || []).map((row) => [Number(row.workOrderItemId || 0), row]))
+  form.items.forEach((row) => {
+    const draftRow = draftRowMap.get(Number(row.id || 0))
+    const allocations = {}
+    for (const target of draftRow?.targets || []) {
+      allocations[Number(target.shopId || 0)] = {
+        quantity: Math.max(0, Number(target.quantity || 0)),
+        currentStock: Number(target.currentStock || 0),
+      }
+    }
+    row.sourceStock = Number(draftRow?.sourceStock || row.sourceStock || 0)
+    row.allocations = allocations
+    ensureBatchTransferAllocations(row)
+  })
+  form.batchTransfer = true
+  editorStep.value = 1
 }
 
 function canEditRow(row) {
@@ -7532,6 +7846,7 @@ function canAllocateRow(row) {
   return (
     canWrite.value &&
     String(row?.status || '') === 'approved' &&
+    !row?.isBatchTransfer &&
     ['purchase', 'transfer'].includes(String(row?.orderType || ''))
   )
 }
@@ -8015,16 +8330,21 @@ function openCreateDialog(nextType = 'transfer') {
   categoryDialogVisible.value = true
 }
 
-function openCreateDialogByCategory(categoryValue) {
+async function openCreateDialogByCategory(categoryValue) {
+  updateViewport()
+  const openedFromCategoryDialog = categoryDialogVisible.value
   const targetCategory = categoryValue || 'goods'
   const nextType = defaultTypeForCategory(targetCategory)
   categoryDraft.category = targetCategory
   resetForm(nextType)
   categoryDialogVisible.value = false
-  mobileEditorSessionActive.value = isMobileViewport.value
-  mobileWorkOrderStep.value = isMobileViewport.value ? 2 : 1
+  const useMobileFlow = isMobileViewport.value && !openedFromCategoryDialog
+  mobileEditorSessionActive.value = useMobileFlow
+  mobileWorkOrderStep.value = useMobileFlow ? 2 : 1
   mobileWorkOrderTransitionName.value = 'mobile-work-order-step-next'
+  await nextTick()
   editorVisible.value = true
+  await nextTick()
   captureEditorSnapshot()
 }
 
@@ -8204,11 +8524,25 @@ function validateStepOne() {
   return true
 }
 
+function validateBatchTransferTargets() {
+  if (!isBatchTransferMode.value) {
+    return true
+  }
+  if (!batchTransferTargetIds.value.length) {
+    ElMessage.warning('请至少选择一个收货店铺/仓库')
+    return false
+  }
+  return true
+}
+
 function goToEditorStep(nextStep) {
   if (Number(nextStep || 1) > 1 && !validateStepOne()) {
     return
   }
-  editorStep.value = Math.min(Math.max(Number(nextStep || 1), 1), editorStepOptions.length)
+  if (isBatchTransferMode.value && Number(nextStep || 1) > 2 && !validateBatchTransferTargets()) {
+    return
+  }
+  editorStep.value = Math.min(Math.max(Number(nextStep || 1), 1), editorStepOptions.value.length)
 }
 
 function nextEditorStep() {
@@ -8379,7 +8713,19 @@ async function openEditDialog(orderId) {
     ElMessage.error(payload?.message || '工单详情获取失败')
     return
   }
-  applyOrderToForm(payload.order)
+  if (payload.order?.isBatchTransfer) {
+    const batchPayload = await apiGet(`/work-orders/${orderId}/batch-transfer-draft`, {
+      token: authStore.token,
+    })
+    if (batchPayload?.success && batchPayload?.draft) {
+      applyBatchTransferDraftResponse(batchPayload)
+    } else {
+      applyOrderToForm(payload.order)
+      ElMessage.warning(batchPayload?.message || '批量调拨明细加载失败，请检查后再保存')
+    }
+  } else {
+    applyOrderToForm(payload.order)
+  }
   mobileEditorSessionActive.value = isMobileViewport.value
   mobileWorkOrderStep.value = isMobileViewport.value ? 3 : 1
   mobileWorkOrderTransitionName.value = 'mobile-work-order-step-next'
@@ -8589,6 +8935,10 @@ async function saveEditor(statusValue) {
     ElMessage.warning('当前账号没有保存工单权限')
     return
   }
+  if (isBatchTransferMode.value) {
+    await saveBatchTransferEditor(statusValue)
+    return
+  }
   if (statusValue === 'draft') {
     await maybeRemoveBlankRowsBeforeDraftSave()
   }
@@ -8656,6 +9006,66 @@ async function saveEditor(statusValue) {
   detailSortState.prop = ''
   detailSortState.order = ''
   normalizeDetailItemsPage()
+  await Promise.all([loadDashboard(), loadOrders()])
+}
+
+async function saveBatchTransferEditor(statusValue) {
+  if (!validateStepOne() || !validateBatchTransferTargets()) {
+    return
+  }
+  const validRows = form.items.filter((row) => Number(row.goodsId || 0) > 0)
+  if (!validRows.length) {
+    ElMessage.warning('请至少新增一个待调拨商品')
+    return
+  }
+  if (statusValue === 'pending' && validRows.every((row) => batchTransferRowAssignedQuantity(row) <= 0)) {
+    ElMessage.warning('请填写至少一个店铺的调拨数量')
+    return
+  }
+  if (statusValue === 'pending') {
+    try {
+      await confirmAction('确认按当前店铺数量生成商品调拨单吗？', '确认批量调拨', '确认生成')
+    } catch {
+      return
+    }
+  }
+  const payload = buildBatchTransferPayload(statusValue)
+  if (statusValue === 'draft') {
+    savingDraft.value = true
+  } else {
+    submitting.value = true
+  }
+  let result = null
+  try {
+    if (statusValue === 'pending') {
+      if (!form.id) {
+        const draftPayload = await apiPost('/work-orders/batch-transfer-draft', payload, { token: authStore.token })
+        form.id = draftPayload?.order?.id || null
+      }
+      result = form.id
+        ? await apiPost(`/work-orders/${form.id}/batch-transfer-draft/confirm`, payload, { token: authStore.token })
+        : null
+    } else {
+      result = form.id
+        ? await apiPut(`/work-orders/${form.id}/batch-transfer-draft`, payload, { token: authStore.token })
+        : await apiPost('/work-orders/batch-transfer-draft', payload, { token: authStore.token })
+    }
+  } catch {
+    result = null
+  }
+  if (statusValue === 'draft') {
+    savingDraft.value = false
+  } else {
+    submitting.value = false
+  }
+  if (!result?.success) {
+    ElMessage.error(result?.message || '批量商品调拨单保存失败')
+    return
+  }
+  ElMessage.success(result.message || (statusValue === 'pending' ? '批量商品调拨单已生成' : '批量商品调拨单草稿已保存'))
+  captureEditorSnapshot()
+  editorVisible.value = false
+  mobileEditorSessionActive.value = false
   await Promise.all([loadDashboard(), loadOrders()])
 }
 
@@ -9580,6 +9990,13 @@ watch(
         if (!String(row.channel || '').trim()) {
           row.channel = '门店'
         }
+      })
+    }
+    if (isBatchTransferMode.value) {
+      batchTransferTargetIds.value = batchTransferTargetIds.value.filter((shopId) => Number(shopId || 0) !== Number(form.sourceShopId || 0))
+      form.items.forEach((row) => {
+        ensureBatchTransferAllocations(row)
+        void hydrateBatchTransferRowStocks(row)
       })
     }
     void refreshSelectedItemStocks()

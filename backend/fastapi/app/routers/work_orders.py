@@ -48,6 +48,7 @@ from ..schemas import (
     WorkOrderAllocationDraftSaveRequest,
     WorkOrderAllocationRowOut,
     WorkOrderAllocationTargetOut,
+    WorkOrderBatchTransferSaveRequest,
     WorkOrderDashboardResponse,
     WorkOrderDefaultApproverSettingOut,
     WorkOrderDetailOut,
@@ -165,6 +166,14 @@ def _parse_filter_date(raw: str | None, *, end: bool = False) -> datetime | None
 
 def _work_order_type_label(order_type: str) -> str:
     return WORK_ORDER_TYPES.get(order_type, WORK_ORDER_TYPES["transfer"])["label"]
+
+
+def _is_batch_transfer_order(order: AqcWorkOrder) -> bool:
+    return (
+        _clean_text(order.order_type, 20) == "transfer"
+        and order.target_shop_id is None
+        and order.allocation_draft is not None
+    )
 
 
 def _to_work_order_setting_out(order_type: str, setting: AqcWorkOrderSetting | None = None) -> WorkOrderDefaultApproverSettingOut:
@@ -527,7 +536,7 @@ def _to_order_summary(
         orderCategory=_work_order_category(order.order_type),
         orderCategoryLabel=_work_order_category_label(order.order_type),
         orderType=_clean_text(order.order_type, 20),
-        orderTypeLabel=_work_order_type_label(order.order_type),
+        orderTypeLabel="批量商品调拨单" if _is_batch_transfer_order(order) else _work_order_type_label(order.order_type),
         reason=_clean_text(order.reason, 255),
         status=_clean_text(order.status, 20),
         statusLabel=_work_order_status_label(order.status),
@@ -543,6 +552,7 @@ def _to_order_summary(
         itemCount=item_count,
         totalQuantity=total_quantity,
         totalAmount=total_amount,
+        isBatchTransfer=_is_batch_transfer_order(order),
         createdAt=to_iso(order.created_at) or "",
         updatedAt=to_iso(order.updated_at) or "",
     )
@@ -2107,6 +2117,160 @@ def _create_transfer_order_from_allocation(
     return order
 
 
+def _build_batch_transfer_reason(form_date: datetime, source_shop: AqcShop) -> str:
+    date_text = form_date.strftime("%Y-%m-%d")
+    source_name = simplify_shop_name(source_shop.name) or _clean_text(source_shop.name, 255) or "未设置发货点位"
+    return _clean_text(f"{date_text}-{source_name}-批量商品调拨单", 255)
+
+
+def _batch_transfer_target_options(db: Session, source_shop_id: int) -> dict[int, WorkOrderShopOptionOut]:
+    return {
+        int(item.id): item
+        for item in _available_allocation_target_options(db, source_shop_id=source_shop_id)
+    }
+
+
+def _create_or_update_batch_transfer_draft(
+    db: Session,
+    *,
+    actor: AqcUser,
+    payload: WorkOrderBatchTransferSaveRequest,
+    order: AqcWorkOrder | None = None,
+) -> AqcWorkOrder:
+    source_shop = db.execute(select(AqcShop).where(AqcShop.id == int(payload.sourceShopId)).limit(1)).scalars().first()
+    if source_shop is None:
+        raise ValueError("请选择有效的发货店铺/仓库")
+    available_targets = _batch_transfer_target_options(db, int(source_shop.id))
+    target_shop_ids: list[int] = []
+    seen_targets: set[int] = set()
+    for raw_shop_id in payload.targetShopIds:
+        shop_id = int(raw_shop_id or 0)
+        if shop_id <= 0 or shop_id in seen_targets:
+            continue
+        if shop_id not in available_targets:
+            raise ValueError("所选收货店铺/仓库不存在或不可用")
+        seen_targets.add(shop_id)
+        target_shop_ids.append(shop_id)
+    if not target_shop_ids:
+        raise ValueError("请至少选择一个收货店铺/仓库")
+
+    approver = None
+    if payload.approverId is not None:
+        approver = _validate_approver(db, actor, payload.approverId)
+
+    shared_group = None
+    group_id = int(payload.groupId or 0) if payload.groupId is not None else None
+    if group_id:
+        shared_group = db.execute(select(AqcGroup).where(AqcGroup.id == group_id, AqcGroup.is_active.is_(True)).limit(1)).scalars().first()
+        if shared_group is None:
+            raise ValueError("所选群组不存在或已停用")
+        if not _is_group_member(db, int(shared_group.id), int(actor.id or 0)):
+            raise ValueError("当前账号不在所选群组中，不能共享草稿")
+    else:
+        shared_group = _default_group_for_user(db, int(actor.id or 0))
+
+    goods_ids = [int(row.goodsId or 0) for row in payload.rows if int(row.goodsId or 0) > 0]
+    goods_map = {
+        int(item.id): item
+        for item in db.execute(select(AqcGoodsItem).where(AqcGoodsItem.id.in_(goods_ids))).scalars().all()
+    } if goods_ids else {}
+    if not goods_map:
+        raise ValueError("请至少新增一个有效商品")
+
+    form_date = _parse_form_date(payload.formDate)
+    if order is None:
+        order = AqcWorkOrder(
+            order_num=_generate_order_num(db, "transfer"),
+            order_type="transfer",
+            status="draft",
+            applicant_id=int(actor.id),
+            applicant_name=_display_name(actor),
+            stock_applied=False,
+        )
+        db.add(order)
+    elif not _is_batch_transfer_order(order) and order.id is not None:
+        raise ValueError("当前工单不是批量商品调拨草稿")
+
+    order.status = "draft"
+    order.reason = _clean_text(payload.reason, 255) or _build_batch_transfer_reason(form_date, source_shop)
+    order.form_date = form_date
+    order.source_shop_id = int(source_shop.id)
+    order.source_shop_name = _clean_text(source_shop.name, 255)
+    order.target_shop_id = None
+    order.target_shop_name = ""
+    order.supplier_name = ""
+    order.partner_name = ""
+    order.approver_id = int(approver.id) if approver is not None else None
+    order.approver_name = _display_name(approver)
+    order.shared_group_id = int(shared_group.id) if shared_group is not None else None
+    order.shared_group_name = _clean_text(shared_group.name, 80) if shared_group is not None else ""
+    order.shared_by_id = int(actor.id) if shared_group is not None else None
+    order.shared_by_name = _display_name(actor) if shared_group is not None else ""
+
+    order.items.clear()
+    db.flush()
+    serialized_source_rows: list[tuple[AqcWorkOrderItem, list[dict]]] = []
+    for index, row in enumerate(payload.rows):
+        goods = goods_map.get(int(row.goodsId or 0))
+        if goods is None:
+            continue
+        target_rows: list[dict] = []
+        assigned_quantity = 0
+        seen_row_targets: set[int] = set()
+        for target in row.targets:
+            shop_id = int(target.shopId or 0)
+            if shop_id <= 0 or shop_id in seen_row_targets or shop_id not in seen_targets:
+                continue
+            quantity = max(int(target.quantity or 0), 0)
+            assigned_quantity += quantity
+            seen_row_targets.add(shop_id)
+            target_rows.append({"shopId": shop_id, "quantity": quantity})
+        item = AqcWorkOrderItem(
+            sort_index=index,
+            goods_id=int(goods.id),
+            goods_name=_clean_text(row.goodsName, 191) or _clean_text(goods.model_name or goods.name, 191),
+            product_code=_clean_text(row.productCode, 64) or _clean_text(goods.product_code, 64),
+            brand=_clean_text(row.brand, 120) or _clean_text(goods.brand, 120),
+            series_name=_clean_text(row.series, 120) or _clean_text(goods.series_name, 120),
+            barcode=_clean_text(row.barcode, 64) or _clean_text(goods.barcode, 64),
+            unit_price=_to_amount(row.unitPrice if row.unitPrice is not None else goods.price),
+            quantity=assigned_quantity,
+            total_amount=_to_amount(row.unitPrice if row.unitPrice is not None else goods.price) * assigned_quantity,
+            remark=_clean_text(row.remark, 255),
+            is_new_goods=False,
+        )
+        order.items.append(item)
+        serialized_source_rows.append((item, target_rows))
+    db.flush()
+    if not order.items:
+        raise ValueError("请至少新增一个有效商品")
+
+    draft = order.allocation_draft
+    if draft is None:
+        draft = AqcWorkOrderAllocationDraft(
+            work_order_id=int(order.id),
+            created_by=int(actor.id),
+            created_by_name=_display_name(actor),
+        )
+        db.add(draft)
+        order.allocation_draft = draft
+    draft.source_shop_id = int(source_shop.id)
+    draft.source_shop_name = _clean_text(source_shop.name, 255)
+    draft.approver_id = int(approver.id) if approver is not None else None
+    draft.approver_name = _display_name(approver)
+    draft.shared_group_id = int(shared_group.id) if shared_group is not None else None
+    draft.shared_group_name = _clean_text(shared_group.name, 80) if shared_group is not None else ""
+    draft.target_shop_ids_json = json.dumps(target_shop_ids, ensure_ascii=False)
+    draft.allocations_json = _serialize_allocation_rows([
+        {"workOrderItemId": int(item.id), "targets": target_rows}
+        for item, target_rows in serialized_source_rows
+    ])
+    draft.updated_by = int(actor.id)
+    draft.updated_by_name = _display_name(actor)
+    db.flush()
+    return order
+
+
 @router.get("/meta", response_model=WorkOrderMetaResponse)
 def work_order_meta(
     user: AqcUser = Depends(require_permissions("workorders.read")),
@@ -2587,6 +2751,152 @@ def list_work_order_logs(
         "total": total,
         "logs": [_to_work_order_log_out(action, order) for action, order in rows],
     }
+
+
+def _batch_transfer_response(db: Session, order: AqcWorkOrder, user: AqcUser, message: str = "") -> dict:
+    refreshed = _load_order_for_detail(db, int(order.id))
+    if refreshed is None:
+        return {"success": False, "message": "工单不存在", "order": None, "draft": None}
+    draft = _build_allocation_draft_out(db, order=refreshed, draft=refreshed.allocation_draft)
+    return {
+        "success": True,
+        "message": message,
+        "order": _to_order_detail(db, refreshed, user),
+        "draft": draft,
+        "targetOptions": _available_allocation_target_options(db, source_shop_id=draft.sourceShopId),
+        "approverOptions": [
+            WorkOrderApproverOptionOut(
+                id=int(item.id),
+                username=_clean_text(item.username, 50),
+                displayName=_display_name(item),
+                aqcRoleKey=get_aqc_role_key(item),
+            )
+            for item in db.execute(select(AqcUser).where(AqcUser.is_active.is_(True)).order_by(AqcUser.updated_at.desc(), AqcUser.id.desc())).scalars().all()
+            if (int(item.id) != int(user.id) or _is_admin(user)) and get_aqc_role_key(item) == "aqc_admin"
+        ],
+    }
+
+
+@router.post("/batch-transfer-draft")
+def create_batch_transfer_draft(
+    payload: WorkOrderBatchTransferSaveRequest,
+    user: AqcUser = Depends(require_permissions("workorders.write")),
+    db: Session = Depends(get_db),
+):
+    try:
+        order = _create_or_update_batch_transfer_draft(db, actor=user, payload=payload)
+        _append_action(db, order=order, actor=user, action_type="saved", status_from="", status_to="draft", comment="保存批量商品调拨单草稿")
+        db.commit()
+        return _batch_transfer_response(db, order, user, "批量商品调拨单草稿已保存")
+    except Exception as exc:
+        db.rollback()
+        return {"success": False, "message": str(exc), "order": None, "draft": None}
+
+
+@router.put("/{order_id}/batch-transfer-draft")
+def update_batch_transfer_draft(
+    order_id: int,
+    payload: WorkOrderBatchTransferSaveRequest,
+    user: AqcUser = Depends(require_permissions("workorders.write")),
+    db: Session = Depends(get_db),
+):
+    order = _load_order_for_detail(db, order_id)
+    if order is None:
+        return {"success": False, "message": "工单不存在", "order": None, "draft": None}
+    if not _can_edit_order(db, user, order):
+        return {"success": False, "message": "没有权限编辑该工单", "order": None, "draft": None}
+    try:
+        updated = _create_or_update_batch_transfer_draft(db, actor=user, payload=payload, order=order)
+        _append_action(db, order=updated, actor=user, action_type="saved", status_from="draft", status_to="draft", comment="更新批量商品调拨单草稿")
+        db.commit()
+        return _batch_transfer_response(db, updated, user, "批量商品调拨单草稿已保存")
+    except Exception as exc:
+        db.rollback()
+        return {"success": False, "message": str(exc), "order": None, "draft": None}
+
+
+@router.get("/{order_id}/batch-transfer-draft")
+def get_batch_transfer_draft(
+    order_id: int,
+    user: AqcUser = Depends(require_permissions("workorders.write")),
+    db: Session = Depends(get_db),
+):
+    order = _load_order_for_detail(db, order_id)
+    if order is None:
+        return {"success": False, "message": "工单不存在", "order": None, "draft": None}
+    if not _can_edit_order(db, user, order):
+        return {"success": False, "message": "没有权限编辑该工单", "order": None, "draft": None}
+    if not _is_batch_transfer_order(order):
+        return {"success": False, "message": "当前工单不是批量商品调拨草稿", "order": None, "draft": None}
+    try:
+        return _batch_transfer_response(db, order, user)
+    except Exception as exc:
+        return {"success": False, "message": str(exc), "order": None, "draft": None}
+
+
+@router.post("/{order_id}/batch-transfer-draft/confirm", response_model=WorkOrderAllocationConfirmResponse)
+def confirm_batch_transfer_draft(
+    order_id: int,
+    payload: WorkOrderBatchTransferSaveRequest,
+    user: AqcUser = Depends(require_permissions("workorders.write")),
+    db: Session = Depends(get_db),
+):
+    order = _load_order_for_detail(db, order_id)
+    if order is None:
+        return {"success": False, "message": "工单不存在", "createdCount": 0, "orderIds": []}
+    if not _can_edit_order(db, user, order):
+        return {"success": False, "message": "没有权限确认该工单", "createdCount": 0, "orderIds": []}
+    try:
+        updated = _create_or_update_batch_transfer_draft(db, actor=user, payload=payload, order=order)
+        draft = updated.allocation_draft
+        if draft is None:
+            raise ValueError("批量调拨明细不存在")
+        source_shop = db.execute(select(AqcShop).where(AqcShop.id == int(updated.source_shop_id or 0)).limit(1)).scalars().first()
+        if source_shop is None:
+            raise ValueError("发货店铺/仓库不存在")
+        shop_map = _get_shop_map(db)
+        ordered_items = {int(item.id): item for item in updated.items or [] if item.id is not None}
+        allocation_map = _load_allocation_draft_rows(draft.allocations_json)
+        grouped_items: dict[int, list[tuple[AqcWorkOrderItem, int]]] = {}
+        for item_id, target_map in allocation_map.items():
+            source_item = ordered_items.get(int(item_id))
+            if source_item is None:
+                continue
+            for target_shop_id, quantity in target_map.items():
+                if int(quantity or 0) > 0:
+                    grouped_items.setdefault(int(target_shop_id), []).append((source_item, int(quantity)))
+        if not grouped_items:
+            raise ValueError("当前没有可生成的调拨明细，请先填写调拨数量")
+        created_orders = []
+        for target_shop_id in [int(shop_id) for shop_id in _loads(draft.target_shop_ids_json) if int(shop_id) > 0]:
+            target_items = grouped_items.get(int(target_shop_id), [])
+            target_shop = shop_map.get(int(target_shop_id))
+            if target_shop is None or not target_items:
+                continue
+            created_orders.append(
+                _create_transfer_order_from_allocation(
+                    db,
+                    source_order=updated,
+                    draft=draft,
+                    actor=user,
+                    source_shop=source_shop,
+                    target_shop=target_shop,
+                    target_items=target_items,
+                )
+            )
+        if not created_orders:
+            raise ValueError("当前没有有效的收货店铺/仓库，无法生成调拨单")
+        db.delete(updated)
+        db.commit()
+        return {
+            "success": True,
+            "message": f"已生成 {len(created_orders)} 张商品调拨单草稿",
+            "createdCount": len(created_orders),
+            "orderIds": [int(item.id) for item in created_orders if item.id is not None],
+        }
+    except Exception as exc:
+        db.rollback()
+        return {"success": False, "message": str(exc), "createdCount": 0, "orderIds": []}
 
 
 @router.get("/{order_id}", response_model=WorkOrderDetailResponse)

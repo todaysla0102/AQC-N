@@ -883,16 +883,6 @@
               <el-button @click="openReportDistributionInventoryLog">库存日志</el-button>
             </div>
 
-            <section class="goods-distribution-mobile-summary-bar">
-              <article class="goods-distribution-mobile-summary-item">
-                <span>有货点位</span>
-                <strong>{{ reportDistributionPositiveCount }}</strong>
-              </article>
-              <article class="goods-distribution-mobile-summary-item">
-                <span>点位明细</span>
-                <strong>{{ reportDistributionRows.length }}</strong>
-              </article>
-            </section>
           </div>
 
           <section v-if="reportDistributionRows.length" class="goods-distribution-mobile-list">
@@ -1093,11 +1083,13 @@ const reportDistributionGoodsId = computed(() => (
 ))
 const reportDistributionTitle = computed(() => {
   const item = reportDistributionItem.value
-  const named = [item?.brand, item?.series, item?.model].filter(Boolean).join(' ')
-  return named || item?.goodsModel || item?.name || '当前商品'
+  return item?.model || item?.goodsModel || item?.name || '当前商品'
 })
 const reportDistributionSubtitle = computed(() => {
-  return [reportDistributionItem.value?.goodsBrand, reportDistributionItem.value?.goodsSeries]
+  return [
+    reportDistributionItem.value?.brand || reportDistributionItem.value?.goodsBrand,
+    reportDistributionItem.value?.series || reportDistributionItem.value?.goodsSeries,
+  ]
     .filter(Boolean)
     .join(' / ') || '库存分布'
 })

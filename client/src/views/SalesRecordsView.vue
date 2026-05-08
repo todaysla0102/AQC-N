@@ -437,6 +437,20 @@
           @sort-change="onSortChange"
         >
           <el-table-column v-if="!isRepairMode" prop="goodsModel" label="型号" min-width="190" sortable="custom" show-overflow-tooltip />
+          <el-table-column v-if="!isRepairMode" label="图片" width="72" align="center">
+            <template #default="{ row }">
+              <button
+                v-if="resolveSalesRecordCoverImage(row)"
+                type="button"
+                class="goods-table-image-button"
+                :aria-label="`查看 ${mobileRecordTitle(row)} 商品大图`"
+                @click.stop="openSalesRecordImagePreview(row)"
+              >
+                <img :src="apiAssetUrl(resolveSalesRecordCoverImage(row))" :alt="`${mobileRecordTitle(row)} 商品图片`" loading="lazy" />
+              </button>
+              <span v-else class="goods-table-image-empty">-</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="receivedAmount" label="实收金额" min-width="120" sortable="custom">
             <template #default="{ row }">¥ {{ formatMoney(row.receivedAmount) }}</template>
           </el-table-column>
@@ -542,6 +556,9 @@
       :expanded-snap="0.92"
     >
       <section class="sales-record-mobile-detail" v-if="activeMobileRecord">
+        <figure v-if="mobileRecordDetailImageSrc" class="goods-mobile-detail-image">
+          <img :src="mobileRecordDetailImageSrc" :alt="`${mobileRecordTitle(activeMobileRecord)} 商品图片`" loading="lazy" />
+        </figure>
         <div class="sales-record-mobile-detail-hero">
           <strong>¥ {{ formatMoney(activeMobileRecord.receivedAmount) }}</strong>
           <span>{{ activeMobileRecord.discountDisplay && activeMobileRecord.discountDisplay !== '/' ? `${activeMobileRecord.discountDisplay}折` : '原价' }}</span>
@@ -554,6 +571,21 @@
         </div>
       </section>
     </MobileBottomSheet>
+
+    <el-dialog
+      v-model="salesRecordImagePreviewVisible"
+      title="商品图片"
+      width="min(720px, 94vw)"
+      append-to-body
+      align-center
+      destroy-on-close
+      class="aqc-app-dialog goods-image-preview-dialog"
+    >
+      <figure class="goods-image-preview-frame">
+        <img v-if="salesRecordImagePreviewSrc" :src="salesRecordImagePreviewSrc" :alt="`${salesRecordImagePreviewTitle} 商品大图`" />
+        <figcaption>{{ salesRecordImagePreviewTitle }}</figcaption>
+      </figure>
+    </el-dialog>
 
     <MobileBottomSheet
       v-if="isMobileViewport"
@@ -982,7 +1014,7 @@ import ResponsiveTableActions from '../components/ResponsiveTableActions.vue'
 import SalesCalendarCard from '../components/SalesCalendarCard.vue'
 import SalesSummaryPanel from '../components/SalesSummaryPanel.vue'
 import { useMobileViewport } from '../composables/useMobileViewport'
-import { apiDelete, apiGet, apiPut } from '../services/api'
+import { apiAssetUrl, apiDelete, apiGet, apiPut } from '../services/api'
 import { useAuthStore } from '../stores/auth'
 import { confirmAction, confirmDestructiveAction } from '../utils/confirm'
 import { downloadCsvFile, escapeCsvCell } from '../utils/csv'
@@ -1055,6 +1087,9 @@ const mobileDistributionLoading = ref(false)
 const mobileDistributionItem = ref(null)
 const mobileDistributionRows = ref([])
 const mobileDistributionTotalStock = ref(0)
+const salesRecordImagePreviewVisible = ref(false)
+const salesRecordImagePreviewSrc = ref('')
+const salesRecordImagePreviewTitle = ref('')
 const mobileSummaryDetailVisible = ref(false)
 const mobileSummaryPayload = ref(null)
 const actionColumnWidth = computed(() => resolveTableActionWidth([[
@@ -1126,6 +1161,7 @@ const calendarScopeOptions = computed(() => meta.shopOptions.map((option) => ({
 const mobileDistributionTotalAmount = computed(() => (
   mobileDistributionRows.value.reduce((sum, item) => sum + Number(item.lineAmount || 0), 0)
 ))
+const mobileRecordDetailImageSrc = computed(() => apiAssetUrl(resolveSalesRecordCoverImage(activeMobileRecord.value)))
 const mobileSummaryDetailItems = computed(() => {
   const payload = mobileSummaryPayload.value || {}
   return [
@@ -1340,6 +1376,7 @@ const mobileRecordDetailItems = computed(() => {
     ...(!isRepairMode.value
       ? [
         { label: '商品型号', value: row.goodsModel },
+        { label: '数量', value: row.quantity },
         { label: '品牌', value: row.goodsBrand },
         { label: '系列', value: row.goodsSeries },
         { label: '条码', value: row.goodsBarcode },
@@ -1475,6 +1512,36 @@ function mobileRecordTitle(row) {
     return row.shopName || row.orderNum || '维修销售'
   }
   return row.goodsModel || row.orderNum || '未填写型号'
+}
+
+function parseSalesRecordImageList(value) {
+  if (Array.isArray(value)) {
+    return value
+  }
+  try {
+    const parsed = JSON.parse(String(value || '[]'))
+    return Array.isArray(parsed) ? parsed : []
+  } catch (_error) {
+    return []
+  }
+}
+
+function resolveSalesRecordCoverImage(row) {
+  const coverImage = String(row?.goodsCoverImage || row?.coverImage || '').trim()
+  if (coverImage) {
+    return coverImage
+  }
+  return String(parseSalesRecordImageList(row?.goodsImageList || row?.imageList)[0] || '').trim()
+}
+
+function openSalesRecordImagePreview(row) {
+  const image = resolveSalesRecordCoverImage(row)
+  if (!image) {
+    return
+  }
+  salesRecordImagePreviewTitle.value = mobileRecordTitle(row)
+  salesRecordImagePreviewSrc.value = apiAssetUrl(image)
+  salesRecordImagePreviewVisible.value = true
 }
 
 function mobileRecordSubtitle(row) {

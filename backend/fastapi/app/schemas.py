@@ -451,6 +451,8 @@ class SaleRecordOut(BaseModel):
     goodsSeries: str
     goodsModel: str
     goodsBarcode: str
+    goodsCoverImage: str = ""
+    goodsImageList: str = "[]"
     indexKey: str
     goodsDisplayName: str
     unitPrice: float
@@ -1610,6 +1612,7 @@ class WorkOrderSummaryOut(BaseModel):
     itemCount: int = 0
     totalQuantity: int = 0
     totalAmount: float = 0
+    isBatchTransfer: bool = False
     createdAt: str
     updatedAt: str
 
@@ -1732,6 +1735,40 @@ class WorkOrderAllocationDraftSaveRequest(BaseModel):
     approverId: int | None = Field(default=None, ge=1)
     targetShopIds: list[int] = Field(default_factory=list)
     rows: list[WorkOrderAllocationDraftRowInput] = Field(default_factory=list)
+
+
+class WorkOrderBatchTransferRowInput(BaseModel):
+    goodsId: int = Field(ge=1)
+    goodsName: str = Field(default="", max_length=191)
+    productCode: str | None = Field(default=None, max_length=64)
+    brand: str | None = Field(default=None, max_length=120)
+    series: str | None = Field(default=None, max_length=120)
+    barcode: str | None = Field(default=None, max_length=64)
+    unitPrice: float = Field(default=0, ge=0, le=999999999)
+    remark: str | None = Field(default=None, max_length=255)
+    targets: list[WorkOrderAllocationDraftTargetInput] = Field(default_factory=list)
+
+
+class WorkOrderBatchTransferSaveRequest(BaseModel):
+    status: Literal["draft", "pending"] = "draft"
+    reason: str | None = Field(default=None, max_length=255)
+    formDate: str | None = Field(default=None, max_length=40)
+    sourceShopId: int = Field(ge=1)
+    approverId: int | None = Field(default=None, ge=1)
+    groupId: int | None = Field(default=None, ge=1)
+    targetShopIds: list[int] = Field(default_factory=list)
+    rows: list[WorkOrderBatchTransferRowInput] = Field(default_factory=list)
+
+    @field_validator("sourceShopId", "approverId", "groupId", mode="before")
+    @classmethod
+    def _validate_batch_optional_ids(cls, value: Any) -> int | None:
+        return WorkOrderItemInput._normalize_optional_int(value)
+
+    @field_validator("reason", "formDate", mode="before")
+    @classmethod
+    def _validate_batch_text_fields(cls, value: Any) -> str | None:
+        normalized = WorkOrderItemInput._normalize_text(value)
+        return normalized or None
 
 
 class WorkOrderAllocationDraftResponse(BaseModel):

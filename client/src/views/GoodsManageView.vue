@@ -1131,16 +1131,6 @@
             <el-button @click="openInventoryLogDialog(distributionItem)">库存日志</el-button>
           </div>
 
-          <section class="goods-distribution-mobile-summary-bar">
-            <article class="goods-distribution-mobile-summary-item">
-              <span>有货点位</span>
-              <strong>{{ distributionPositiveCount }}</strong>
-            </article>
-            <article class="goods-distribution-mobile-summary-item">
-              <span>点位明细</span>
-              <strong>{{ distributionRows.length }}</strong>
-            </article>
-          </section>
         </div>
 
         <section v-if="distributionRows.length" class="goods-distribution-mobile-list">
@@ -2039,7 +2029,7 @@ function buildBrandSeriesText(item) {
 }
 
 function buildInventorySubtitle(item, positiveCount) {
-  return buildBrandSeriesText(item) + ' · 有货点位 ' + String(positiveCount)
+  return buildBrandSeriesText(item)
 }
 
 function mobileGoodsTitle(row) {

@@ -555,6 +555,8 @@ def _to_sale_out(item: AqcSaleRecord) -> SaleRecordOut:
         goodsSeries=item.goods_series or "",
         goodsModel=item.goods_model or "",
         goodsBarcode=item.goods_barcode or "",
+        goodsCoverImage=item.goods.cover_image if item.goods else "",
+        goodsImageList=item.goods.image_list if item.goods else "[]",
         indexKey=item.index_key or _normalize_sale_index_key(item.goods_series, item.goods_brand, item.goods_model),
         goodsDisplayName=_goods_display_name(item.goods_brand or "", item.goods_series or "", item.goods_model or ""),
         unitPrice=float(item.unit_price or 0),
@@ -1771,7 +1773,10 @@ def list_sale_records(
     rows = (
         db.execute(
             select(AqcSaleRecord)
-            .options(selectinload(AqcSaleRecord.creator).load_only(AqcUser.id, AqcUser.display_name, AqcUser.username, AqcUser.phone))
+            .options(
+                selectinload(AqcSaleRecord.creator).load_only(AqcUser.id, AqcUser.display_name, AqcUser.username, AqcUser.phone),
+                selectinload(AqcSaleRecord.goods).load_only(AqcGoodsItem.id, AqcGoodsItem.cover_image, AqcGoodsItem.image_list),
+            )
             .where(*conditions)
             .order_by(sort_clause, AqcSaleRecord.sold_at.desc(), AqcSaleRecord.id.desc())
             .offset(offset)

@@ -3309,7 +3309,13 @@ import { useAuthStore } from '../stores/auth'
 import { confirmAction, confirmDestructiveAction } from '../utils/confirm'
 import { getShanghaiDateTimeLocalValue, getShanghaiTimestamp } from '../utils/shanghaiTime'
 import { resolveTableActionWidth } from '../utils/tableActions'
-import { displayShopName, replaceShopNameAliases, SHOP_TYPE_OTHER_WAREHOUSE } from '../utils/shops'
+import {
+  displayShopName,
+  replaceShopNameAliases,
+  SHOP_TYPE_OTHER_WAREHOUSE,
+  SHOP_TYPE_REPAIR,
+  SHOP_TYPE_WAREHOUSE,
+} from '../utils/shops'
 
 const authStore = useAuthStore()
 const { isMobileViewport, updateViewport } = useMobileViewport()
@@ -3482,6 +3488,7 @@ const scope = ref('mine')
 const filterPanelOpen = ref(false)
 const editorVisible = ref(false)
 const mobileEditorSessionActive = ref(false)
+const editorPresentationMode = ref('desktop')
 const categoryDialogVisible = ref(false)
 const editorStep = ref(1)
 const mobileWorkOrderStep = ref(1)
@@ -3870,7 +3877,10 @@ const hasEditorUnsavedChanges = computed(() => (
   editorSnapshot.value &&
   editorSnapshot.value !== serializeEditorState()
 ))
-const showMobileWorkOrderEditor = computed(() => isMobileViewport.value && (editorVisible.value || mobileEditorSessionActive.value))
+const showMobileWorkOrderEditor = computed(() => (
+  editorPresentationMode.value === 'mobile'
+  && (editorVisible.value || mobileEditorSessionActive.value)
+))
 const mobileWorkOrderCurrentStepLabel = computed(() => (
   mobileWorkOrderStepOptions.find((item) => item.value === mobileWorkOrderStep.value)?.label || '新建工单'
 ))
@@ -6001,6 +6011,20 @@ function detailSourceLabel() {
 
 function detailTargetLabel() {
   return '收货仓库/店铺'
+}
+
+function formatShopType(shopType) {
+  const normalizedType = Number(shopType || 0)
+  if (normalizedType === SHOP_TYPE_WAREHOUSE) {
+    return '仓库'
+  }
+  if (normalizedType === SHOP_TYPE_OTHER_WAREHOUSE) {
+    return '其他仓库'
+  }
+  if (normalizedType === SHOP_TYPE_REPAIR) {
+    return '维修点'
+  }
+  return '店铺'
 }
 
 function cleanReasonText(value) {
@@ -8318,6 +8342,7 @@ function openCreateDialog(nextType = 'transfer') {
   const nextCategory = resolveOrderCategory(nextType)
   categoryDraft.category = nextCategory
   if (isMobileViewport.value) {
+    editorPresentationMode.value = 'mobile'
     categoryDialogVisible.value = false
     mobileEditorSessionActive.value = true
     resetForm(defaultTypeForCategory(nextCategory))
@@ -8327,6 +8352,7 @@ function openCreateDialog(nextType = 'transfer') {
     captureEditorSnapshot()
     return
   }
+  editorPresentationMode.value = 'desktop'
   categoryDialogVisible.value = true
 }
 
@@ -8339,6 +8365,7 @@ async function openCreateDialogByCategory(categoryValue) {
   resetForm(nextType)
   categoryDialogVisible.value = false
   const useMobileFlow = isMobileViewport.value && !openedFromCategoryDialog
+  editorPresentationMode.value = useMobileFlow ? 'mobile' : 'desktop'
   mobileEditorSessionActive.value = useMobileFlow
   mobileWorkOrderStep.value = useMobileFlow ? 2 : 1
   mobileWorkOrderTransitionName.value = 'mobile-work-order-step-next'
@@ -8726,6 +8753,7 @@ async function openEditDialog(orderId) {
   } else {
     applyOrderToForm(payload.order)
   }
+  editorPresentationMode.value = isMobileViewport.value ? 'mobile' : 'desktop'
   mobileEditorSessionActive.value = isMobileViewport.value
   mobileWorkOrderStep.value = isMobileViewport.value ? 3 : 1
   mobileWorkOrderTransitionName.value = 'mobile-work-order-step-next'
@@ -8782,6 +8810,7 @@ async function requestCloseEditor(done) {
   }
   editorVisible.value = false
   mobileEditorSessionActive.value = false
+  editorPresentationMode.value = 'desktop'
   done?.()
 }
 
@@ -9001,6 +9030,7 @@ async function saveEditor(statusValue) {
   captureEditorSnapshot()
   editorVisible.value = false
   mobileEditorSessionActive.value = false
+  editorPresentationMode.value = 'desktop'
   detailOrder.value = normalizePersistedOrderDetail(result.order)
   detailItemsPage.value = 1
   detailSortState.prop = ''
@@ -9066,6 +9096,7 @@ async function saveBatchTransferEditor(statusValue) {
   captureEditorSnapshot()
   editorVisible.value = false
   mobileEditorSessionActive.value = false
+  editorPresentationMode.value = 'desktop'
   await Promise.all([loadDashboard(), loadOrders()])
 }
 

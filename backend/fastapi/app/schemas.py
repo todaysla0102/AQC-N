@@ -6,6 +6,16 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 
+def _normalize_int_list_input(value: Any) -> list[int]:
+    if value is None or value == "":
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, (tuple, set)):
+        return list(value)
+    return [value]
+
+
 class MessageResponse(BaseModel):
     success: bool
     message: str
@@ -347,6 +357,11 @@ class AdminUserCreateRequest(BaseModel):
     employmentDate: str | None = Field(default=None, max_length=10)
     roleIds: list[int] = Field(default_factory=list)
 
+    @field_validator("shopIds", mode="before")
+    @classmethod
+    def normalize_shop_ids(cls, value: Any) -> list[int]:
+        return _normalize_int_list_input(value)
+
 
 class AdminUserUpdateRequest(BaseModel):
     username: str | None = Field(default=None, min_length=2, max_length=50)
@@ -364,6 +379,13 @@ class AdminUserUpdateRequest(BaseModel):
     employmentDate: str | None = Field(default=None, max_length=10)
     password: str | None = Field(default=None, min_length=8, max_length=128)
     roleIds: list[int] | None = None
+
+    @field_validator("shopIds", mode="before")
+    @classmethod
+    def normalize_shop_ids(cls, value: Any) -> list[int] | None:
+        if value is None:
+            return None
+        return _normalize_int_list_input(value)
 
 
 class AdminSetUserRolesRequest(BaseModel):
@@ -1745,6 +1767,7 @@ class WorkOrderBatchTransferRowInput(BaseModel):
     series: str | None = Field(default=None, max_length=120)
     barcode: str | None = Field(default=None, max_length=64)
     unitPrice: float = Field(default=0, ge=0, le=999999999)
+    quantity: int = Field(default=1, ge=1, le=1000000000)
     remark: str | None = Field(default=None, max_length=255)
     targets: list[WorkOrderAllocationDraftTargetInput] = Field(default_factory=list)
 

@@ -2225,6 +2225,8 @@ def _create_or_update_batch_transfer_draft(
             assigned_quantity += quantity
             seen_row_targets.add(shop_id)
             target_rows.append({"shopId": shop_id, "quantity": quantity})
+        planned_quantity = max(int(row.quantity or 1), 1)
+        unit_price = _to_amount(row.unitPrice if row.unitPrice is not None else goods.price)
         item = AqcWorkOrderItem(
             sort_index=index,
             goods_id=int(goods.id),
@@ -2233,9 +2235,9 @@ def _create_or_update_batch_transfer_draft(
             brand=_clean_text(row.brand, 120) or _clean_text(goods.brand, 120),
             series_name=_clean_text(row.series, 120) or _clean_text(goods.series_name, 120),
             barcode=_clean_text(row.barcode, 64) or _clean_text(goods.barcode, 64),
-            unit_price=_to_amount(row.unitPrice if row.unitPrice is not None else goods.price),
-            quantity=assigned_quantity,
-            total_amount=_to_amount(row.unitPrice if row.unitPrice is not None else goods.price) * assigned_quantity,
+            unit_price=unit_price,
+            quantity=planned_quantity,
+            total_amount=unit_price * planned_quantity,
             remark=_clean_text(row.remark, 255),
             is_new_goods=False,
         )

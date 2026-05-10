@@ -696,28 +696,35 @@
         </section>
 
         <section v-show="isBatchTransferMode && editorStep === 2" class="card-surface work-order-allocation-settings-panel">
-          <div class="panel-head-simple">
-            <div>
-              <h3>选择收货店铺/仓库</h3>
-              <p>点位的选择顺序会直接决定后续明细表格的列顺序。</p>
+          <section class="goods-compare-panel">
+            <div class="goods-compare-selection-summary work-order-allocation-target-summary">
+              <div class="export-columns-copy">
+                <strong>选择收货店铺 / 仓库</strong>
+                <span>点位的选择顺序会直接决定后续明细表格的列顺序。</span>
+              </div>
+              <strong>{{ batchTransferTargetIds.length }} 个已选择</strong>
             </div>
-          </div>
-          <div class="goods-compare-location-grid work-order-allocation-target-grid">
-            <button
-              v-for="item in batchTransferTargetOptions"
-              :key="`batch-transfer-target-${item.id}`"
-              type="button"
-              class="goods-compare-location-card"
-              :class="{ active: batchTransferTargetIds.includes(item.id) }"
-              @click="toggleBatchTransferTarget(item.id)"
-            >
-              <span v-if="resolveBatchTransferTargetOrder(item.id) > 0" class="goods-compare-location-order">
-                {{ resolveBatchTransferTargetOrder(item.id) }}
-              </span>
-              <strong>{{ displayShopName(item.name) }}</strong>
-              <small>{{ formatShopType(item.shopType) }}</small>
-            </button>
-          </div>
+
+            <div class="inventory-button-grid goods-compare-location-grid">
+              <div
+                v-for="item in batchTransferTargetOptions"
+                :key="`batch-transfer-target-${item.id}`"
+                class="inventory-button-row goods-compare-location-row"
+              >
+                <button
+                  type="button"
+                  class="inventory-button-main goods-compare-location-button"
+                  :class="{ active: batchTransferTargetIds.includes(item.id) }"
+                  @click="toggleBatchTransferTarget(item.id)"
+                >
+                  <span v-if="resolveBatchTransferTargetOrder(item.id) > 0" class="goods-compare-location-order">
+                    {{ resolveBatchTransferTargetOrder(item.id) }}
+                  </span>
+                  <span>{{ displayShopName(item.name) }}</span>
+                </button>
+              </div>
+            </div>
+          </section>
         </section>
 
         <section v-show="editorStep === editorDetailStep" class="work-order-editor-shell">
@@ -788,6 +795,42 @@
                 <el-button @click="openBatchEntryDialog">批量录入商品</el-button>
                 <el-button @click="addItemRows(1)">新增一行</el-button>
               </div>
+              <div
+                v-if="showQuickAddBar && !isMobileViewport"
+                ref="quickAddBarRef"
+                class="work-order-quick-add-bar work-order-quick-add-bar--desktop card-surface"
+              >
+                <div class="work-order-quick-add-copy">
+                  <strong>连续新增栏</strong>
+                  <span>输入条码或商品名称后回车，商品会优先插入到表格第一行，输入焦点会留在这里继续录入。</span>
+                </div>
+                <div class="work-order-quick-add-controls">
+                  <div
+                    ref="quickAddFieldRef"
+                    class="work-order-quick-add-input"
+                  >
+                    <el-autocomplete
+                      v-model="quickAddQuery"
+                      class="full-width"
+                      :fetch-suggestions="(queryString, cb) => fetchGoodsSuggestions(queryString, cb)"
+                      select-when-unmatched
+                      clearable
+                      placeholder="条码 / 商品名称"
+                      @input="handleQuickAddInput"
+                      @select="handleQuickAddSuggestionSelect"
+                      @keyup.enter="handleQuickAddEnter"
+                    />
+                  </div>
+                  <div class="work-order-quick-add-result" :class="{ matched: quickAddMatchedLabel }">
+                    <span v-if="quickAddMatchedLabel">{{ quickAddMatchedLabel }}</span>
+                    <span v-else-if="quickAddLoading">正在匹配商品...</span>
+                    <span v-else>匹配成功后会在这里显示商品名称</span>
+                  </div>
+                  <el-button type="primary" :loading="quickAddLoading" @click="commitQuickAddInput()">
+                    添加到表格
+                  </el-button>
+                </div>
+              </div>
               <div class="table-shell open-table-shell work-order-allocation-table-shell">
                 <el-table
                   class="work-order-allocation-table"
@@ -812,7 +855,20 @@
                           @change="() => onRowGoodsCommit(row)"
                           @input="() => onRowGoodsInput(row)"
                         />
-                        <small>品牌 {{ row.brand || '-' }} · 系列 {{ row.series || '-' }} · 单价 ¥ {{ formatMoney(row.unitPrice) }} · 原单/库存数量 {{ Number(row.sourceStock || 0) }}，已分配 {{ batchTransferRowAssignedQuantity(row) }}</small>
+                        <div class="work-order-batch-goods-meta">
+                          <small>品牌 {{ row.brand || '-' }} · 系列 {{ row.series || '-' }} · 单价 ¥ {{ formatMoney(row.unitPrice) }} · 发货库存 {{ Number(row.sourceStock || 0) }}，已分配 {{ batchTransferRowAssignedQuantity(row) }}</small>
+                          <label class="work-order-batch-source-quantity">
+                            <span>发货数量</span>
+                            <input
+                              :value="String(row.quantity || 1)"
+                              type="number"
+                              min="1"
+                              step="1"
+                              class="allocation-qty-input"
+                              @input="setBatchTransferPlannedQuantity(row, $event?.target?.value)"
+                            />
+                          </label>
+                        </div>
                       </div>
                     </template>
                   </el-table-column>
@@ -3305,6 +3361,7 @@ import WorkOrderSalesPickerDialog from '../components/WorkOrderSalesPickerDialog
 import { useBarcodeScanner } from '../composables/useBarcodeScanner'
 import { useMobileViewport } from '../composables/useMobileViewport'
 import { apiDelete, apiGet, apiPost, apiPut } from '../services/api'
+import { isDemoMode } from '../services/demoMode'
 import { useAuthStore } from '../stores/auth'
 import { confirmAction, confirmDestructiveAction } from '../utils/confirm'
 import { getShanghaiDateTimeLocalValue, getShanghaiTimestamp } from '../utils/shanghaiTime'
@@ -3322,7 +3379,7 @@ const { isMobileViewport, updateViewport } = useMobileViewport()
 const route = useRoute()
 const router = useRouter()
 const ALLOCATION_TARGET_MEMORY_KEY = 'aqc_n_allocation_target_memory_v1'
-const localTestMockWorkOrdersEnabled = import.meta.env.VITE_LOCAL_TEST_LOGIN === 'true'
+const localTestMockWorkOrdersEnabled = isDemoMode() || import.meta.env.VITE_LOCAL_TEST_LOGIN === 'true'
 const localTestWorkOrderCategories = [
   { value: 'goods', label: '商品类工单' },
   { value: 'sales', label: '销售类工单' },
@@ -5691,14 +5748,27 @@ function ensureBatchTransferAllocations(row) {
   }
   const current = row.allocations && typeof row.allocations === 'object' ? row.allocations : {}
   const next = {}
+  let changed = !row.allocations || typeof row.allocations !== 'object'
   for (const target of selectedBatchTransferTargets.value) {
     const shopId = Number(target.id || 0)
     next[shopId] = {
       quantity: Math.max(0, Number(current[shopId]?.quantity || 0)),
       currentStock: Number(current[shopId]?.currentStock || 0),
     }
+    if (
+      !current[shopId]
+      || Number(current[shopId]?.quantity || 0) !== next[shopId].quantity
+      || Number(current[shopId]?.currentStock || 0) !== next[shopId].currentStock
+    ) {
+      changed = true
+    }
   }
-  row.allocations = next
+  if (Object.keys(current).length !== Object.keys(next).length) {
+    changed = true
+  }
+  if (changed) {
+    row.allocations = next
+  }
 }
 
 async function hydrateBatchTransferRowStocks(row) {
@@ -5706,14 +5776,22 @@ async function hydrateBatchTransferRowStocks(row) {
     return
   }
   const snapshot = await loadGoodsInventorySnapshot(row.goodsId, { force: true })
-  row.sourceStock = Number(snapshot[Number(form.sourceShopId || 0)] || 0)
+  applyBatchTransferInventorySnapshot(row, snapshot)
+}
+
+function applyBatchTransferInventorySnapshot(row, snapshotOverride = null) {
+  if (!isBatchTransferMode.value || !Number(row?.goodsId || 0)) {
+    return
+  }
+  const snapshot = snapshotOverride || goodsInventorySnapshots[Number(row.goodsId || 0)] || {}
+  row.sourceStock = Number(snapshot[Number(form.sourceShopId || 0)] ?? row.sourceStock ?? 0)
   ensureBatchTransferAllocations(row)
   for (const target of selectedBatchTransferTargets.value) {
     const shopId = Number(target.id || 0)
     if (!row.allocations[shopId]) {
       row.allocations[shopId] = { quantity: 0, currentStock: 0 }
     }
-    row.allocations[shopId].currentStock = Number(snapshot[shopId] || 0)
+    row.allocations[shopId].currentStock = Number(snapshot[shopId] ?? row.allocations[shopId].currentStock ?? 0)
   }
 }
 
@@ -5735,8 +5813,8 @@ function toggleBatchTransferTarget(shopId) {
 }
 
 function getBatchTransferAllocation(row, shopId) {
-  ensureBatchTransferAllocations(row)
-  return row?.allocations?.[Number(shopId || 0)] || null
+  const allocations = row?.allocations && typeof row.allocations === 'object' ? row.allocations : {}
+  return allocations[Number(shopId || 0)] || null
 }
 
 function getBatchTransferQuantity(row, shopId) {
@@ -5744,13 +5822,13 @@ function getBatchTransferQuantity(row, shopId) {
 }
 
 function setBatchTransferQuantity(row, shopId, nextValue) {
+  ensureBatchTransferAllocations(row)
   const allocation = getBatchTransferAllocation(row, shopId)
   if (!allocation) {
     return
   }
   const parsed = Number.parseInt(String(nextValue ?? '').trim(), 10)
   allocation.quantity = Math.max(0, Number.isFinite(parsed) ? parsed : 0)
-  row.quantity = batchTransferRowAssignedQuantity(row)
   syncRowAmount(row)
 }
 
@@ -5759,8 +5837,17 @@ function getBatchTransferCurrentStock(row, shopId) {
 }
 
 function batchTransferRowAssignedQuantity(row) {
-  ensureBatchTransferAllocations(row)
-  return Object.values(row?.allocations || {}).reduce((sum, target) => sum + Number(target?.quantity || 0), 0)
+  const allocations = row?.allocations && typeof row.allocations === 'object' ? row.allocations : {}
+  return Object.values(allocations).reduce((sum, target) => sum + Number(target?.quantity || 0), 0)
+}
+
+function setBatchTransferPlannedQuantity(row, nextValue) {
+  if (!row) {
+    return
+  }
+  const parsed = Number.parseInt(String(nextValue ?? '').trim(), 10)
+  row.quantity = Math.max(1, Number.isFinite(parsed) ? parsed : 1)
+  syncRowAmount(row)
 }
 
 function buildBatchTransferPayload(statusValue) {
@@ -5782,6 +5869,7 @@ function buildBatchTransferPayload(statusValue) {
         series: row.series || '',
         barcode: row.barcode || '',
         unitPrice: Number(row.unitPrice || 0),
+        quantity: Math.max(1, Number(row.quantity || 1)),
         remark: row.remark || '',
         targets: selectedBatchTransferTargets.value.map((target) => ({
           shopId: Number(target.id || 0),
@@ -6395,6 +6483,21 @@ function mergeDuplicateFilledGoodsRow(row, target = 'default') {
     return { merged: false, targetIndex: currentIndex, targetRow: row }
   }
   const duplicateRow = rows[duplicateIndex]
+  if (isBatchTransferMode.value && target === 'default') {
+    ensureBatchTransferAllocations(duplicateRow)
+    ensureBatchTransferAllocations(row)
+    for (const targetShop of selectedBatchTransferTargets.value) {
+      const shopId = Number(targetShop.id || 0)
+      const duplicateAllocation = duplicateRow.allocations?.[shopId]
+      const sourceAllocation = row.allocations?.[shopId]
+      if (!duplicateAllocation || !sourceAllocation) {
+        continue
+      }
+      duplicateAllocation.quantity = Math.max(0, Number(duplicateAllocation.quantity || 0))
+        + Math.max(0, Number(sourceAllocation.quantity || 0))
+      duplicateAllocation.currentStock = Number(sourceAllocation.currentStock || duplicateAllocation.currentStock || 0)
+    }
+  }
   duplicateRow.quantity = Math.max(Number(duplicateRow.quantity || 1), 1) + Math.max(Number(row.quantity || 1), 1)
   if (isSalesOrderType.value) {
     duplicateRow.receivableAmount = Number((Number(duplicateRow.unitPrice || row.unitPrice || 0) * duplicateRow.quantity).toFixed(2))
@@ -6617,6 +6720,9 @@ function clearRowGoods(row) {
   resolvedBarcodeByRow.delete(localId)
   barcodeLookupTokens.delete(localId)
   salesRecordLookupTokens.delete(localId)
+  if (isBatchTransferMode.value) {
+    ensureBatchTransferAllocations(row)
+  }
 }
 
 function fillRowFromGoods(row, goods) {
@@ -6637,7 +6743,7 @@ function fillRowFromGoods(row, goods) {
   row.targetStock = secondaryStock
   row.isNewGoods = false
   if (isBatchTransferMode.value) {
-    ensureBatchTransferAllocations(row)
+    applyBatchTransferInventorySnapshot(row)
     void hydrateBatchTransferRowStocks(row)
   }
   ensureRowSalespersonByShop(row)
@@ -7376,7 +7482,11 @@ function addItemRows(count = 1, target = 'default') {
   const safeCount = Math.min(Math.max(Number(count || 1), 1), 50)
   const rows = editorRowsForTarget(target)
   for (let index = 0; index < safeCount; index += 1) {
-    rows.push(createRow({ lineType: target === 'default' ? 'default' : target }))
+    const row = createRow({ lineType: target === 'default' ? 'default' : target })
+    if (isBatchTransferMode.value && target === 'default') {
+      ensureBatchTransferAllocations(row)
+    }
+    rows.push(row)
   }
   editorItemsPage.value = 1
   normalizeEditorItemsPage()
@@ -9366,7 +9476,7 @@ async function handleBatchGoodsConfirm(selectedRows) {
   const enriched = await Promise.all(rows.map((item) => enrichGoodsWithStocks(item)))
   const targetRows = editorRowsForTarget(currentBatchTarget.value)
   enriched.forEach((item) => {
-    targetRows.push(createRow({
+    const row = createRow({
       lineType: currentBatchTarget.value === 'default' ? 'default' : currentBatchTarget.value,
       quantity: Math.max(Number(item.quantity || 1), 1),
       sourceStock: Number(item.sourceStock ?? item.shopQuantity ?? 0),
@@ -9386,7 +9496,11 @@ async function handleBatchGoodsConfirm(selectedRows) {
         ? String(form.exchangeIncomingItems[0]?.salesperson || applicantName.value || '')
         : applicantName.value,
       channel: (isSaleExchangeType.value || isSaleAffectingInventory.value) ? '门店' : '',
-    }))
+    })
+    if (isBatchTransferMode.value && currentBatchTarget.value === 'default') {
+      applyBatchTransferInventorySnapshot(row)
+    }
+    targetRows.push(row)
   })
   mergeDuplicateGoodsRowsInTarget(currentBatchTarget.value)
   targetRows.forEach((row) => syncRowAmount(row))

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 
 import { apiDelete, apiGet, apiPost } from '../services/api'
+import { DEMO_TOKEN, isDemoMode } from '../services/demoMode'
 
 
 const TOKEN_KEY = 'aqc_n_token'
@@ -10,6 +11,9 @@ function canUseStorage() {
 }
 
 function readToken() {
+  if (isDemoMode()) {
+    return DEMO_TOKEN
+  }
   if (!canUseStorage()) {
     return ''
   }
@@ -22,6 +26,9 @@ function readToken() {
 }
 
 function writeToken(token, rememberLogin = true) {
+  if (isDemoMode()) {
+    return
+  }
   if (!canUseStorage()) {
     return
   }

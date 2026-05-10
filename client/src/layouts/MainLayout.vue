@@ -714,6 +714,7 @@ import { useMobileViewport } from '../composables/useMobileViewport'
 import { useBarcodeScanner } from '../composables/useBarcodeScanner'
 import { sidebarMenus } from '../data/modules'
 import { apiGet, apiPost } from '../services/api'
+import { isDemoMode } from '../services/demoMode'
 import { useAppVersionStore } from '../stores/appVersion'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
@@ -830,7 +831,7 @@ let lastBrowserUnreadCount = 0
 
 const SEARCH_LIMIT = 7
 const GLOBAL_SEARCH_Z_INDEX = 96000
-const localTestGlobalSearchEnabled = import.meta.env.VITE_LOCAL_TEST_LOGIN === 'true'
+const localTestGlobalSearchEnabled = isDemoMode() || import.meta.env.VITE_LOCAL_TEST_LOGIN === 'true'
 const localTestGlobalSearchGoods = [
   { id: -901, brand: 'CASIO', series: 'G-SHOCK', model: 'GM-2100-1A', barcode: 'MOCK-GM2100', price: 1490, stock: 18 },
   { id: -902, brand: 'CASIO', series: 'BABY-G', model: 'BA-110X-7A', barcode: 'MOCK-BA110', price: 990, stock: 12 },

@@ -878,13 +878,16 @@ function editRow(row) {
 
 function buildAccountPayload(formState) {
   const accountPhone = String(formState.accountPhone || '').trim()
+  const normalizedShopIds = (Array.isArray(formState.shopIds) ? formState.shopIds : [formState.shopIds])
+    .map((value) => Number(value || 0))
+    .filter((value) => value > 0)
   return {
     username: accountPhone,
     phone: accountPhone,
     displayName: formState.displayName,
     aqcRoleKey: formState.aqcRoleKey,
-    shopId: formState.shopIds?.[0] ?? null,
-    shopIds: formState.shopIds || [],
+    shopId: normalizedShopIds[0] ?? null,
+    shopIds: normalizedShopIds,
     employmentDate: formState.employmentDate || null,
     isActive: formState.isActive,
     ...(formState.password ? { password: formState.password } : {}),

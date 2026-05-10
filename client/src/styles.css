@@ -8368,6 +8368,33 @@ button.work-order-type-card {
   line-height: 1.5;
 }
 
+.work-order-batch-goods-meta {
+  display: grid;
+  gap: 8px;
+}
+
+.work-order-batch-source-quantity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 220px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.work-order-batch-source-quantity span {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.work-order-batch-source-quantity .allocation-qty-input {
+  width: 92px;
+  height: 30px;
+  border-radius: 10px;
+}
+
 .allocation-qty-input {
   width: 100%;
   min-width: 0;

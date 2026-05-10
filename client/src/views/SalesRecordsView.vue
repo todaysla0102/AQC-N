@@ -1015,6 +1015,7 @@ import SalesCalendarCard from '../components/SalesCalendarCard.vue'
 import SalesSummaryPanel from '../components/SalesSummaryPanel.vue'
 import { useMobileViewport } from '../composables/useMobileViewport'
 import { apiAssetUrl, apiDelete, apiGet, apiPut } from '../services/api'
+import { isDemoMode } from '../services/demoMode'
 import { useAuthStore } from '../stores/auth'
 import { confirmAction, confirmDestructiveAction } from '../utils/confirm'
 import { downloadCsvFile, escapeCsvCell } from '../utils/csv'
@@ -1121,7 +1122,7 @@ const RECOMMENDED_PERIOD_PRESET_LABELS = {
   this_year: '本年',
   last_year: '去年',
 }
-const localTestMockRecordsEnabled = import.meta.env.VITE_LOCAL_TEST_LOGIN === 'true'
+const localTestMockRecordsEnabled = isDemoMode() || import.meta.env.VITE_LOCAL_TEST_LOGIN === 'true'
 
 const meta = reactive({
   totalItems: 0,

@@ -812,6 +812,7 @@ import ResponsiveTableActions from '../components/ResponsiveTableActions.vue'
 import { useBarcodeScanner } from '../composables/useBarcodeScanner'
 import { useMobileViewport } from '../composables/useMobileViewport'
 import { apiAssetUrl, apiGet, apiPost, apiUpload } from '../services/api'
+import { isDemoMode } from '../services/demoMode'
 import { useAuthStore } from '../stores/auth'
 import { confirmAction } from '../utils/confirm'
 import { getShanghaiDateTimeLocalValue } from '../utils/shanghaiTime'
@@ -874,7 +875,7 @@ const mobileStepOptions = [
   { value: 2, label: '信息' },
   { value: 3, label: '完成' },
 ]
-const localTestMockEnabled = import.meta.env.VITE_LOCAL_TEST_LOGIN === 'true'
+const localTestMockEnabled = isDemoMode() || import.meta.env.VITE_LOCAL_TEST_LOGIN === 'true'
 const localTestMockGoods = [
   {
     id: -901,

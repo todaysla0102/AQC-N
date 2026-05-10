@@ -242,6 +242,30 @@ const selectedQuantityTotal = computed(() => (
   selectedRows.value.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
 ))
 
+function normalizeCatalogOption(option) {
+  if (option && typeof option === 'object') {
+    const value = String(option.value ?? option.label ?? option.name ?? '').trim()
+    const label = String(option.label ?? option.name ?? value).trim()
+    if (!value && !label) {
+      return null
+    }
+    return {
+      ...option,
+      value: value || label,
+      label: label || value,
+      count: Number(option.count || 0),
+    }
+  }
+  const value = String(option || '').trim()
+  return value ? { value, label: value, count: 0 } : null
+}
+
+function normalizeCatalogOptions(options) {
+  return (Array.isArray(options) ? options : [])
+    .map((option) => normalizeCatalogOption(option))
+    .filter(Boolean)
+}
+
 function formatMoney(value) {
   return Number(value || 0).toFixed(2)
 }
@@ -308,8 +332,8 @@ async function loadMeta() {
   if (!payload?.success) {
     return
   }
-  meta.brandOptions = payload.brandOptions || []
-  meta.seriesOptions = payload.seriesOptions || []
+  meta.brandOptions = normalizeCatalogOptions(payload.brandOptions)
+  meta.seriesOptions = normalizeCatalogOptions(payload.seriesOptions)
 }
 
 async function loadGoods() {
@@ -394,7 +418,6 @@ function confirmSelection() {
 }
 
 async function onOpened() {
-  actionColumnWidth.value = isMobileViewport.value ? 92 : 180
   hasStockFilter.value = props.distributionShopId && quantityFilterLabel.value.includes('发货') ? 'nonzero' : ''
   await onSearch()
 }
@@ -406,7 +429,6 @@ watch(
       clearSelection()
       return
     }
-    actionColumnWidth.value = isMobileViewport.value ? 92 : 180
     hasStockFilter.value = props.distributionShopId && quantityFilterLabel.value.includes('发货') ? 'nonzero' : ''
     clearSelection()
     void onSearch()

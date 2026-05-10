@@ -1,3 +1,5 @@
+import { getDemoApiResponse } from './demoApi'
+
 const base = import.meta.env.VITE_API_BASE || '/api'
 
 const API_BASE = base.endsWith('/') ? base.slice(0, -1) : base
@@ -114,6 +116,11 @@ export async function apiRequest(path, options = {}) {
     signal,
     timeoutMs = 15000,
   } = options
+
+  const demoResponse = getDemoApiResponse(path, { method, body, rawBody, headers, query })
+  if (demoResponse) {
+    return demoResponse
+  }
 
   const sanitizedQuery = query
     ? Object.fromEntries(

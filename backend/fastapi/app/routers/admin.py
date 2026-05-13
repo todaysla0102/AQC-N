@@ -126,6 +126,23 @@ def _build_account_internal_login_headers() -> dict[str, str]:
     }
 
 
+def _is_auth_error_message(message: str | None) -> bool:
+    text = str(message or "")
+    return (
+        "401" in text
+        or "403" in text
+        or "未登录" in text
+        or "登录状态" in text
+        or "需要管理员权限" in text
+        or "需要 AQC 管理员权限" in text
+    )
+
+
+def _looks_like_account_conflict(message: str | None) -> bool:
+    text = str(message or "")
+    return "已存在" in text or "已被使用" in text or "手机号" in text and "存在" in text
+
+
 def _normalize_phone_candidate(value: str | None) -> str:
     compact = "".join(ch for ch in str(value or "").strip() if ch.isdigit())
     if compact.startswith("86") and len(compact) > 11:
@@ -389,31 +406,9 @@ def _sync_users_to_account_aqc_group(db: Session, users: list[AqcUser]) -> dict[
     if not settings.symuse_aqc_sync_enabled:
         return stats
 
-    account = settings.symuse_admin_account.strip()
-    password = settings.symuse_admin_password
-    if not account or not password:
-        stats["syncFailed"] = len(users)
-        return stats
-
-    login_result, login_error = _http_json(
-        "POST",
-        f"{settings.symuse_api_base}/auth/login",
-        payload={"account": account, "password": password},
-        extra_headers=_build_account_internal_login_headers(),
-    )
-    if login_error or not login_result or not login_result.get("success"):
-        stats["syncFailed"] = len(users)
-        return stats
-
-    token = str(login_result.get("token") or "").strip()
-    if not token:
-        stats["syncFailed"] = len(users)
-        return stats
-
-    users_result, users_error = _http_json(
+    users_result, users_error = _call_account_admin_api(
         "GET",
-        f"{settings.symuse_api_base}/admin/users",
-        token=token,
+        "/admin/users",
     )
     if users_error or not users_result or not users_result.get("success"):
         stats["syncFailed"] = len(users)
@@ -476,11 +471,10 @@ def _sync_users_to_account_aqc_group(db: Session, users: list[AqcUser]) -> dict[
             "roleKey": _resolve_account_aqc_role_key(user, role_slugs),
             "isEnabled": bool(user.is_active),
         }
-        result, error = _http_json(
+        result, error = _call_account_admin_api(
             "POST",
-            f"{settings.symuse_api_base}/admin/aqc/users/upsert",
+            "/admin/aqc/users/upsert",
             payload=payload,
-            token=token,
         )
         if error or not result or not result.get("success"):
             stats["syncFailed"] += 1
@@ -529,6 +523,17 @@ def _call_account_admin_api(
     *,
     payload: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
+    internal_headers = _build_account_internal_login_headers()
+    if internal_headers.get("X-Symuse-Client-Id") and internal_headers.get("X-Symuse-Client-Secret"):
+        result, error = _http_json(
+            method,
+            f"{settings.symuse_api_base}{path}",
+            payload=payload,
+            extra_headers=internal_headers,
+        )
+        if not error or not _is_auth_error_message(error):
+            return result, error
+
     token, token_error = _get_account_admin_token()
     if token_error:
         return None, token_error
@@ -623,6 +628,29 @@ def _ensure_account_user(
         },
     )
     if error or not result or not result.get("success"):
+        create_message = error or (result or {}).get("message") or "账号中心用户创建失败"
+        if _looks_like_account_conflict(create_message):
+            matched_user_id, match_error = _find_account_user_id(username=username, email=normalized_email, phone=phone)
+            if matched_user_id is not None:
+                update_error = _update_account_user(
+                    external_user_id=matched_user_id,
+                    username=username,
+                    email=normalized_email,
+                    phone=phone,
+                    display_name=display_name,
+                    is_active=True,
+                )
+                if update_error:
+                    return None, update_error
+                password_error = _reset_account_user_password(
+                    external_user_id=matched_user_id,
+                    password=password,
+                )
+                if password_error:
+                    return None, password_error
+                return matched_user_id, None
+            if match_error and not _is_auth_error_message(match_error):
+                return None, match_error
         return None, error or (result or {}).get("message") or "账号中心用户创建失败"
     return _find_account_user_id(username=username, email=normalized_email, phone=phone)
 

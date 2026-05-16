@@ -8,7 +8,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from ..database import SessionLocal, get_db
@@ -78,6 +78,7 @@ from ..schemas import (
 router = APIRouter(prefix="/work-orders", tags=["work-orders"])
 SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 DRAFT_STATUSES = {"draft", "rejected"}
+WORK_ORDER_TRASH_RETENTION_DAYS = 10
 WORK_ORDER_TYPES = {
     "transfer": {"label": "商品调拨单", "prefix": "DB", "category": "goods"},
     "purchase": {"label": "商品进货单", "prefix": "SJ", "category": "goods"},
@@ -113,6 +114,8 @@ WORK_ORDER_ACTIONS = {
     "withdrawn": "撤回至草稿",
     "approved": "审批通过",
     "rejected": "审批驳回",
+    "deleted": "移入废纸篓",
+    "restored": "恢复工单",
 }
 SCHEDULE_RUNNER_STOP = Event()
 SCHEDULE_RUNNER_STARTED = False
@@ -174,6 +177,33 @@ def _is_batch_transfer_order(order: AqcWorkOrder) -> bool:
         and order.target_shop_id is None
         and order.allocation_draft is not None
     )
+
+
+def _is_deleted_order(order: AqcWorkOrder) -> bool:
+    return order.deleted_at is not None
+
+
+def _work_order_active_condition():
+    return AqcWorkOrder.deleted_at.is_(None)
+
+
+def _work_order_trash_condition(user: AqcUser):
+    return and_(
+        AqcWorkOrder.deleted_at.is_not(None),
+        AqcWorkOrder.deleted_by_id == int(user.id),
+    )
+
+
+def _purge_expired_deleted_work_orders(db: Session) -> None:
+    cutoff = _now_shanghai() - timedelta(days=WORK_ORDER_TRASH_RETENTION_DAYS)
+    result = db.execute(
+        delete(AqcWorkOrder).where(
+            AqcWorkOrder.deleted_at.is_not(None),
+            AqcWorkOrder.deleted_at < cutoff,
+        )
+    )
+    if getattr(result, "rowcount", 0):
+        db.commit()
 
 
 def _to_work_order_setting_out(order_type: str, setting: AqcWorkOrderSetting | None = None) -> WorkOrderDefaultApproverSettingOut:
@@ -322,6 +352,8 @@ def _is_group_member(db: Session, group_id: int | None, user_id: int) -> bool:
 
 
 def _can_view_order(db: Session, user: AqcUser, order: AqcWorkOrder) -> bool:
+    if _is_deleted_order(order):
+        return int(order.deleted_by_id or 0) == int(user.id or 0)
     if _is_admin(user):
         return True
     return (
@@ -332,7 +364,7 @@ def _can_view_order(db: Session, user: AqcUser, order: AqcWorkOrder) -> bool:
 
 
 def _can_edit_order(db: Session, user: AqcUser, order: AqcWorkOrder) -> bool:
-    if order.status not in DRAFT_STATUSES:
+    if _is_deleted_order(order) or order.status not in DRAFT_STATUSES:
         return False
     if int(order.applicant_id or 0) == int(user.id or 0):
         return True
@@ -342,6 +374,7 @@ def _can_edit_order(db: Session, user: AqcUser, order: AqcWorkOrder) -> bool:
 def _can_review_order(user: AqcUser, order: AqcWorkOrder) -> bool:
     return (
         _is_admin(user)
+        and not _is_deleted_order(order)
         and order.status == "pending"
         and int(order.approver_id or 0) == int(user.id or 0)
     )
@@ -349,14 +382,15 @@ def _can_review_order(user: AqcUser, order: AqcWorkOrder) -> bool:
 
 def _can_withdraw_order(user: AqcUser, order: AqcWorkOrder) -> bool:
     return (
-        int(order.applicant_id or 0) == int(user.id or 0)
+        not _is_deleted_order(order)
+        and int(order.applicant_id or 0) == int(user.id or 0)
         and order.status == "pending"
         and not bool(order.stock_applied)
     )
 
 
 def _can_delete_order(db: Session, user: AqcUser, order: AqcWorkOrder) -> bool:
-    if bool(order.stock_applied):
+    if _is_deleted_order(order) or bool(order.stock_applied):
         return False
     if order.status in DRAFT_STATUSES:
         return _can_edit_order(db, user, order)
@@ -553,6 +587,9 @@ def _to_order_summary(
         totalQuantity=total_quantity,
         totalAmount=total_amount,
         isBatchTransfer=_is_batch_transfer_order(order),
+        deletedAt=to_iso(order.deleted_at),
+        deletedById=int(order.deleted_by_id) if order.deleted_by_id is not None else None,
+        deletedByName=_clean_text(order.deleted_by_name, 80),
         createdAt=to_iso(order.created_at) or "",
         updatedAt=to_iso(order.updated_at) or "",
     )
@@ -749,17 +786,19 @@ def _append_action(
 
 def _query_scope_filter(user: AqcUser, scope: str):
     clean_scope = _clean_text(scope, 20) or "mine"
+    if clean_scope == "trash":
+        return _work_order_trash_condition(user)
     if clean_scope == "draft":
-        return AqcWorkOrder.status.in_(sorted(DRAFT_STATUSES))
+        return AqcWorkOrder.status.in_(sorted(DRAFT_STATUSES)), _work_order_active_condition()
     if clean_scope == "pending":
-        return AqcWorkOrder.applicant_id == user.id, AqcWorkOrder.status == "pending"
+        return AqcWorkOrder.applicant_id == user.id, AqcWorkOrder.status == "pending", _work_order_active_condition()
     if clean_scope == "approver":
-        return AqcWorkOrder.approver_id == user.id, AqcWorkOrder.status == "pending"
+        return AqcWorkOrder.approver_id == user.id, AqcWorkOrder.status == "pending", _work_order_active_condition()
     if clean_scope == "all" and _is_admin(user):
-        return None
+        return _work_order_active_condition()
     if clean_scope == "all":
-        return or_(AqcWorkOrder.applicant_id == user.id, AqcWorkOrder.approver_id == user.id)
-    return AqcWorkOrder.applicant_id == user.id
+        return or_(AqcWorkOrder.applicant_id == user.id, AqcWorkOrder.approver_id == user.id), _work_order_active_condition()
+    return AqcWorkOrder.applicant_id == user.id, _work_order_active_condition()
 
 
 def _scope_extra_conditions(db: Session, user: AqcUser, scope: str):
@@ -1787,7 +1826,8 @@ def _allocation_source_shop_id(order: AqcWorkOrder) -> int | None:
 
 def _can_allocate_order(db: Session, user: AqcUser, order: AqcWorkOrder) -> bool:
     return (
-        _clean_text(order.status, 20) == "approved"
+        not _is_deleted_order(order)
+        and _clean_text(order.status, 20) == "approved"
         and _clean_text(order.order_type, 20) in {"purchase", "transfer"}
         and bool(order.stock_applied)
         and _can_view_order(db, user, order)
@@ -1877,7 +1917,11 @@ def _build_allocation_draft_out(
     order: AqcWorkOrder,
     draft: AqcWorkOrderAllocationDraft | None,
 ) -> WorkOrderAllocationDraftOut:
-    source_shop_id = _allocation_source_shop_id(order)
+    if _is_batch_transfer_order(order):
+        source_shop_id = int(draft.source_shop_id or order.source_shop_id or 0) if draft is not None else int(order.source_shop_id or 0)
+        source_shop_id = source_shop_id if source_shop_id > 0 else None
+    else:
+        source_shop_id = _allocation_source_shop_id(order)
     if source_shop_id is None:
         raise ValueError("当前工单缺少可分配的发货仓库")
     source_shop = db.execute(select(AqcShop).where(AqcShop.id == int(source_shop_id)).limit(1)).scalars().first()
@@ -2225,7 +2269,7 @@ def _create_or_update_batch_transfer_draft(
             assigned_quantity += quantity
             seen_row_targets.add(shop_id)
             target_rows.append({"shopId": shop_id, "quantity": quantity})
-        planned_quantity = max(int(row.quantity or 1), 1)
+        planned_quantity = max(int(assigned_quantity or row.quantity or 0), 0)
         unit_price = _to_amount(row.unitPrice if row.unitPrice is not None else goods.price)
         item = AqcWorkOrderItem(
             sort_index=index,
@@ -2365,6 +2409,7 @@ def work_order_dashboard(
     user: AqcUser = Depends(require_permissions("workorders.read")),
     db: Session = Depends(get_db),
 ):
+    _purge_expired_deleted_work_orders(db)
     _backfill_shared_drafts_for_accessible_groups(db, user)
     group_ids = _group_ids_for_user(db, int(user.id or 0))
     shared_draft_condition = (
@@ -2376,6 +2421,7 @@ def work_order_dashboard(
         db.execute(
             select(func.count(AqcWorkOrder.id)).where(
                 AqcWorkOrder.status.in_(sorted(DRAFT_STATUSES)),
+                _work_order_active_condition(),
                 or_(AqcWorkOrder.applicant_id == user.id, shared_draft_condition),
             )
         ).scalar()
@@ -2386,6 +2432,7 @@ def work_order_dashboard(
             select(func.count(AqcWorkOrder.id)).where(
                 AqcWorkOrder.applicant_id == user.id,
                 AqcWorkOrder.status == "pending",
+                _work_order_active_condition(),
             )
         ).scalar()
         or 0
@@ -2395,14 +2442,19 @@ def work_order_dashboard(
             select(func.count(AqcWorkOrder.id)).where(
                 AqcWorkOrder.approver_id == user.id,
                 AqcWorkOrder.status == "pending",
+                _work_order_active_condition(),
             )
         ).scalar()
+        or 0
+    )
+    trash_count = int(
+        db.execute(select(func.count(AqcWorkOrder.id)).where(_work_order_trash_condition(user))).scalar()
         or 0
     )
     recent_mine = (
         db.execute(
             select(AqcWorkOrder)
-            .where(AqcWorkOrder.applicant_id == user.id)
+            .where(AqcWorkOrder.applicant_id == user.id, _work_order_active_condition())
             .order_by(AqcWorkOrder.updated_at.desc(), AqcWorkOrder.id.desc())
             .limit(6)
         )
@@ -2414,7 +2466,7 @@ def work_order_dashboard(
         pending_approvals = (
             db.execute(
                 select(AqcWorkOrder)
-                .where(AqcWorkOrder.approver_id == user.id, AqcWorkOrder.status == "pending")
+                .where(AqcWorkOrder.approver_id == user.id, AqcWorkOrder.status == "pending", _work_order_active_condition())
                 .order_by(AqcWorkOrder.form_date.desc(), AqcWorkOrder.id.desc())
                 .limit(6)
             )
@@ -2428,6 +2480,7 @@ def work_order_dashboard(
         "draftCount": draft_count,
         "pendingCount": pending_count,
         "approvalCount": approval_count,
+        "trashCount": trash_count,
         "recentMine": [
             _to_order_summary(item, metrics=recent_metric_map.get(int(item.id), (0, 0, 0.0)))
             for item in recent_mine
@@ -2591,6 +2644,7 @@ def list_work_orders(
     user: AqcUser = Depends(require_permissions("workorders.read")),
     db: Session = Depends(get_db),
 ):
+    _purge_expired_deleted_work_orders(db)
     _backfill_shared_drafts_for_accessible_groups(db, user)
     stmt = select(AqcWorkOrder)
     count_stmt = select(func.count(AqcWorkOrder.id))
@@ -2687,6 +2741,7 @@ def list_work_order_logs(
     user: AqcUser = Depends(require_permissions("workorders.read")),
     db: Session = Depends(get_db),
 ):
+    _purge_expired_deleted_work_orders(db)
     _backfill_shared_drafts_for_accessible_groups(db, user)
     stmt = select(AqcWorkOrderAction, AqcWorkOrder).join(AqcWorkOrder, AqcWorkOrder.id == AqcWorkOrderAction.work_order_id)
     count_stmt = select(func.count(AqcWorkOrderAction.id)).join(AqcWorkOrder, AqcWorkOrder.id == AqcWorkOrderAction.work_order_id)
@@ -3283,12 +3338,77 @@ def delete_work_order(
 
     was_pending = order.status == "pending"
     try:
-        db.delete(order)
+        order.deleted_at = _now_shanghai()
+        order.deleted_by_id = int(user.id)
+        order.deleted_by_name = _display_name(user)
+        _append_action(
+            db,
+            order=order,
+            actor=user,
+            action_type="deleted",
+            status_from=_clean_text(order.status, 20),
+            status_to=_clean_text(order.status, 20),
+            comment=f"移入废纸篓，{WORK_ORDER_TRASH_RETENTION_DAYS} 天后自动彻底删除",
+        )
         db.commit()
         return {
             "success": True,
-            "message": "待审批工单已删除并撤销审批" if was_pending else "工单已删除",
+            "message": "待审批工单已移入废纸篓" if was_pending else "工单已移入废纸篓",
         }
+    except Exception as exc:
+        db.rollback()
+        return {"success": False, "message": str(exc)}
+
+
+@router.post("/{order_id}/restore", response_model=MessageResponse)
+def restore_work_order(
+    order_id: int,
+    user: AqcUser = Depends(require_permissions("workorders.read")),
+    db: Session = Depends(get_db),
+):
+    _purge_expired_deleted_work_orders(db)
+    order = _load_order_for_detail(db, order_id)
+    if order is None or not _is_deleted_order(order):
+        return {"success": False, "message": "废纸篓中未找到该工单"}
+    if int(order.deleted_by_id or 0) != int(user.id or 0):
+        return {"success": False, "message": "只能恢复自己删除的工单"}
+    try:
+        previous_status = _clean_text(order.status, 20)
+        order.deleted_at = None
+        order.deleted_by_id = None
+        order.deleted_by_name = ""
+        _append_action(
+            db,
+            order=order,
+            actor=user,
+            action_type="restored",
+            status_from=previous_status,
+            status_to=previous_status,
+            comment="从废纸篓恢复",
+        )
+        db.commit()
+        return {"success": True, "message": "工单已恢复"}
+    except Exception as exc:
+        db.rollback()
+        return {"success": False, "message": str(exc)}
+
+
+@router.delete("/{order_id}/permanent", response_model=MessageResponse)
+def permanently_delete_work_order(
+    order_id: int,
+    user: AqcUser = Depends(require_permissions("workorders.read")),
+    db: Session = Depends(get_db),
+):
+    _purge_expired_deleted_work_orders(db)
+    order = _load_order_for_detail(db, order_id)
+    if order is None or not _is_deleted_order(order):
+        return {"success": False, "message": "废纸篓中未找到该工单"}
+    if int(order.deleted_by_id or 0) != int(user.id or 0):
+        return {"success": False, "message": "只能彻底删除自己删除的工单"}
+    try:
+        db.delete(order)
+        db.commit()
+        return {"success": True, "message": "工单已彻底删除"}
     except Exception as exc:
         db.rollback()
         return {"success": False, "message": str(exc)}

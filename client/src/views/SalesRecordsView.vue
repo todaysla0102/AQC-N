@@ -1154,7 +1154,7 @@ const calendarYearOptions = computed(() => {
 })
 const calendarDisplayYear = computed(() => `${parseCalendarMonthToken(calendarMonth.value).year}年`)
 const calendarDisplayMonth = computed(() => `${String(parseCalendarMonthToken(calendarMonth.value).month).padStart(2, '0')}月`)
-const calendarScopeDisplayLabel = computed(() => `${shopFilter.value ? simplifyShopName(shopFilter.value) : '总'} · ${calendarDisplayMonth.value}`)
+const calendarScopeDisplayLabel = computed(() => (shopFilter.value ? simplifyShopName(shopFilter.value) : '总销售额'))
 const calendarScopeOptions = computed(() => meta.shopOptions.map((option) => ({
   label: option.label,
   value: option.value,

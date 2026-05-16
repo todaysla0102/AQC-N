@@ -8401,7 +8401,7 @@ button.work-order-type-card {
   height: 34px;
   border-radius: 12px;
   border: 1px solid var(--border-light);
-  background: color-mix(in srgb, var(--field-bg) 92%, transparent);
+  background: color-mix(in srgb, var(--field-bg) 82%, var(--bg-muted));
   color: var(--text-primary);
   text-align: center;
   font: inherit;
@@ -8409,6 +8409,11 @@ button.work-order-type-card {
   padding: 0 10px;
   appearance: textfield;
   -moz-appearance: textfield;
+}
+
+.allocation-qty-input::placeholder {
+  color: var(--text-tertiary);
+  opacity: 1;
 }
 
 .allocation-qty-input::-webkit-outer-spin-button,

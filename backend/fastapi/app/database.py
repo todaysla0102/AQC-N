@@ -446,6 +446,7 @@ def _ensure_runtime_indexes() -> None:
             ("idx_work_orders_applicant_status", "applicant_id, status, id"),
             ("idx_work_orders_approver_status", "approver_id, status, id"),
             ("idx_work_orders_group_status", "shared_group_id, status, id"),
+            ("idx_work_orders_deleted_user_time", "deleted_by_id, deleted_at, id"),
         ],
         "aqc_work_order_items": [
             ("idx_work_order_items_order_sort", "work_order_id, sort_index, id"),
@@ -580,6 +581,9 @@ def _ensure_runtime_columns() -> None:
             "shared_group_name": "VARCHAR(80) NOT NULL DEFAULT ''",
             "shared_by_id": "INTEGER NULL",
             "shared_by_name": "VARCHAR(80) NOT NULL DEFAULT ''",
+            "deleted_at": "DATETIME NULL",
+            "deleted_by_id": "INTEGER NULL",
+            "deleted_by_name": "VARCHAR(80) NOT NULL DEFAULT ''",
             "sale_affects_inventory": "BOOLEAN NOT NULL DEFAULT 0",
         },
         "aqc_work_order_items": {

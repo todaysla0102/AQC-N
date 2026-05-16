@@ -105,6 +105,9 @@ function workOrderRow(input) {
     targetShopName: target.name,
     groupId: 1,
     groupName: '演示协作组',
+    deletedAt: input.deletedAt || null,
+    deletedById: input.deletedById || null,
+    deletedByName: input.deletedByName || '',
     items: [{ id: 1, goodsId: 101, goodsBrand: 'CASIO', goodsSeries: 'G-SHOCK', goodsModel: 'GM-2100-1A', goodsName: 'GM-2100-1A', barcode: 'DEMO-GM2100', quantity: 1, unitPrice: 1490 }],
     logs: [{ id: 1, operatorName: '演示管理员', actionName: '创建工单', createdAt: nowIso(), detail: 'demo 数据，不写入服务器' }],
     createdAt: nowIso(),
@@ -124,6 +127,22 @@ function paginate(rows, query = {}) {
   const page = Math.max(Number(query.page || 1), 1)
   const pageSize = Math.max(Number(query.page_size || query.pageSize || 20), 1)
   return rows.slice((page - 1) * pageSize, page * pageSize)
+}
+
+function filterDemoWorkOrders(query = {}) {
+  const scope = String(query.scope || 'mine').trim()
+  let rows = demoWorkOrders
+  if (scope === 'trash') {
+    rows = rows.filter((item) => item.deletedAt && Number(item.deletedById || 0) === 1)
+  } else {
+    rows = rows.filter((item) => !item.deletedAt)
+    if (scope === 'draft') {
+      rows = rows.filter((item) => ['draft', 'rejected'].includes(String(item.status || '')))
+    } else if (scope === 'pending' || scope === 'approver') {
+      rows = rows.filter((item) => String(item.status || '') === 'pending')
+    }
+  }
+  return filterRows(rows, query, ['orderNum', 'reason', 'applicantName', 'sourceShopName', 'targetShopName'])
 }
 
 function demoUser() {
@@ -252,7 +271,8 @@ export function getDemoApiResponse(path, options = {}) {
     return { success: true, categories: [{ value: 'goods', label: '商品类工单' }, { value: 'sales', label: '销售类工单' }], types: [{ value: 'transfer', label: '商品调拨单', prefix: 'DB', category: 'goods' }, { value: 'purchase', label: '商品进货单', prefix: 'SJ', category: 'goods' }, { value: 'sale', label: '销售单', prefix: 'XS', category: 'sales' }], shopOptions: demoShops, storeOptions: demoShops.filter((item) => item.shopType === 0), warehouseOptions: demoShops.filter((item) => item.shopType === 1), users: demoUsers, groups: [{ id: 1, name: '演示协作组', memberRole: 'owner', memberCount: 3, isDefault: true }], approvalSettings: [] }
   }
   if (cleanPath === '/work-orders/dashboard') {
-    return { success: true, dashboard: { draftCount: demoWorkOrders.filter((item) => item.status === 'draft').length, pendingCount: demoWorkOrders.filter((item) => item.status === 'pending').length, approvalCount: 1, mineCount: demoWorkOrders.length, recentMine: demoWorkOrders, pendingApprovals: demoWorkOrders.filter((item) => item.status === 'pending') } }
+    const activeRows = demoWorkOrders.filter((item) => !item.deletedAt)
+    return { success: true, dashboard: { draftCount: activeRows.filter((item) => item.status === 'draft').length, pendingCount: activeRows.filter((item) => item.status === 'pending').length, approvalCount: activeRows.filter((item) => item.status === 'pending').length, trashCount: demoWorkOrders.filter((item) => item.deletedAt && Number(item.deletedById || 0) === 1).length, mineCount: activeRows.length, recentMine: activeRows, pendingApprovals: activeRows.filter((item) => item.status === 'pending') } }
   }
   if (cleanPath === '/work-orders/settings') {
     return { success: true, settings: [] }
@@ -263,11 +283,43 @@ export function getDemoApiResponse(path, options = {}) {
     return { success: true, message: '演示工单创建成功，未上传服务器', order: created }
   }
   if (cleanPath === '/work-orders') {
-    const rows = filterRows(demoWorkOrders, query, ['orderNum', 'reason', 'applicantName', 'sourceShopName', 'targetShopName'])
+    const rows = filterDemoWorkOrders(query)
     return { success: true, orders: paginate(rows, query), total: rows.length }
+  }
+  const workOrderRestoreMatch = cleanPath.match(/^\/work-orders\/(\d+)\/restore$/)
+  if (workOrderRestoreMatch && method === 'POST') {
+    const order = demoWorkOrders.find((item) => Number(item.id) === Number(workOrderRestoreMatch[1]))
+    if (!order || !order.deletedAt) {
+      return { success: false, message: '废纸篓中未找到该工单' }
+    }
+    order.deletedAt = null
+    order.deletedById = null
+    order.deletedByName = ''
+    order.updatedAt = nowIso()
+    return { success: true, message: '演示工单已恢复' }
+  }
+  const workOrderPermanentMatch = cleanPath.match(/^\/work-orders\/(\d+)\/permanent$/)
+  if (workOrderPermanentMatch && method === 'DELETE') {
+    const index = demoWorkOrders.findIndex((item) => Number(item.id) === Number(workOrderPermanentMatch[1]))
+    if (index < 0 || !demoWorkOrders[index].deletedAt) {
+      return { success: false, message: '废纸篓中未找到该工单' }
+    }
+    demoWorkOrders.splice(index, 1)
+    return { success: true, message: '演示工单已彻底删除' }
   }
   const workOrderMatch = cleanPath.match(/^\/work-orders\/(\d+)$/)
   if (workOrderMatch) {
+    if (method === 'DELETE') {
+      const order = demoWorkOrders.find((item) => Number(item.id) === Number(workOrderMatch[1]))
+      if (!order || order.deletedAt) {
+        return { success: false, message: '演示工单不存在' }
+      }
+      order.deletedAt = nowIso()
+      order.deletedById = 1
+      order.deletedByName = '演示管理员'
+      order.updatedAt = nowIso()
+      return { success: true, message: '演示工单已移入废纸篓' }
+    }
     const order = demoWorkOrders.find((item) => Number(item.id) === Number(workOrderMatch[1]))
     return order ? { success: true, order } : { success: false, message: '演示工单不存在' }
   }

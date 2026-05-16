@@ -336,8 +336,6 @@ def scoped_sales_conditions(user: AqcUser) -> list:
     if role_key == "aqc_departed":
         return [false()]
     shop_ids = user_shop_ids(user)
-    if shop_ids:
-        return [AqcSaleRecord.shop_id.in_(shop_ids)]
     salesperson_candidates = {
         str(user.username or "").strip(),
         str(user.display_name or "").strip(),
@@ -345,6 +343,8 @@ def scoped_sales_conditions(user: AqcUser) -> list:
     }
     salesperson_candidates = {value for value in salesperson_candidates if value}
     conditions = []
+    if shop_ids:
+        conditions.append(AqcSaleRecord.shop_id.in_(shop_ids))
     if salesperson_candidates:
         conditions.append(AqcSaleRecord.salesperson.in_(sorted(salesperson_candidates)))
     if user.id:

@@ -1156,11 +1156,6 @@ def _apply_sale_record_payload(
         if ship_shop is None:
             return None, "所选发货店铺不存在"
     allowed_shop_ids = user_shop_ids(user)
-    if allowed_shop_ids and payload.shopId is not None and payload.shopId not in allowed_shop_ids and get_aqc_role_key(user) != "aqc_admin":
-        return None, "当前账号不能录入其他销售店铺的销售"
-    if allowed_shop_ids and payload.shipShopId is not None and payload.shipShopId not in allowed_shop_ids and get_aqc_role_key(user) != "aqc_admin":
-        return None, "当前账号不能选择其他发货店铺"
-
     sold_at = _parse_sold_at(payload.soldAt)
     salesperson = _resolve_salesperson_name(db, payload.salesperson, user)
     default_shop_id = allowed_shop_ids[0] if allowed_shop_ids else user.shop_id

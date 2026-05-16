@@ -1635,6 +1635,9 @@ class WorkOrderSummaryOut(BaseModel):
     totalQuantity: int = 0
     totalAmount: float = 0
     isBatchTransfer: bool = False
+    deletedAt: str | None = None
+    deletedById: int | None = None
+    deletedByName: str = ""
     createdAt: str
     updatedAt: str
 
@@ -1698,6 +1701,7 @@ class WorkOrderDashboardResponse(BaseModel):
     draftCount: int = 0
     pendingCount: int = 0
     approvalCount: int = 0
+    trashCount: int = 0
     recentMine: list[WorkOrderSummaryOut] = Field(default_factory=list)
     pendingApprovals: list[WorkOrderSummaryOut] = Field(default_factory=list)
 
@@ -1767,7 +1771,7 @@ class WorkOrderBatchTransferRowInput(BaseModel):
     series: str | None = Field(default=None, max_length=120)
     barcode: str | None = Field(default=None, max_length=64)
     unitPrice: float = Field(default=0, ge=0, le=999999999)
-    quantity: int = Field(default=1, ge=1, le=1000000000)
+    quantity: int = Field(default=0, ge=0, le=1000000000)
     remark: str | None = Field(default=None, max_length=255)
     targets: list[WorkOrderAllocationDraftTargetInput] = Field(default_factory=list)
 

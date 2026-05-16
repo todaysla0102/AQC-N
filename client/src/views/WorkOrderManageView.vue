@@ -408,12 +408,18 @@
             <template #default="{ row }">
               <ResponsiveTableActions :menu-width="168">
                 <el-button text type="primary" @click="openDetail(row.id)">查看</el-button>
-                <el-button v-if="canAllocateRow(row)" text type="primary" @click="openAllocationDialog(row.id)">分配</el-button>
-                <el-button v-if="canEditRow(row)" text type="primary" @click="openEditDialog(row.id)">编辑</el-button>
-                <el-button v-if="canWithdrawRow(row)" text type="warning" @click="confirmWithdrawOrder(row)">转草稿</el-button>
-                <el-button v-if="canDeleteRow(row)" text type="danger" @click="confirmDeleteOrder(row)">删除</el-button>
-                <el-button v-if="canReviewRow(row)" text type="success" @click="openDetail(row.id, true)">审批</el-button>
-                <el-button text @click="printById(row.id)">打印</el-button>
+                <template v-if="scope === 'trash'">
+                  <el-button v-if="canRestoreRow(row)" text type="primary" @click="confirmRestoreOrder(row)">恢复</el-button>
+                  <el-button v-if="canPermanentlyDeleteRow(row)" text type="danger" @click="confirmPermanentlyDeleteOrder(row)">彻底删除</el-button>
+                </template>
+                <template v-else>
+                  <el-button v-if="canAllocateRow(row)" text type="primary" @click="openAllocationDialog(row.id)">分配</el-button>
+                  <el-button v-if="canEditRow(row)" text type="primary" @click="openEditDialog(row.id)">编辑</el-button>
+                  <el-button v-if="canWithdrawRow(row)" text type="warning" @click="confirmWithdrawOrder(row)">转草稿</el-button>
+                  <el-button v-if="canDeleteRow(row)" text type="danger" @click="confirmDeleteOrder(row)">删除</el-button>
+                  <el-button v-if="canReviewRow(row)" text type="success" @click="openDetail(row.id, true)">审批</el-button>
+                  <el-button text @click="printById(row.id)">打印</el-button>
+                </template>
               </ResponsiveTableActions>
             </template>
           </el-table-column>
@@ -856,18 +862,8 @@
                           @input="() => onRowGoodsInput(row)"
                         />
                         <div class="work-order-batch-goods-meta">
-                          <small>品牌 {{ row.brand || '-' }} · 系列 {{ row.series || '-' }} · 单价 ¥ {{ formatMoney(row.unitPrice) }} · 发货库存 {{ Number(row.sourceStock || 0) }}，已分配 {{ batchTransferRowAssignedQuantity(row) }}</small>
-                          <label class="work-order-batch-source-quantity">
-                            <span>发货数量</span>
-                            <input
-                              :value="String(row.quantity || 1)"
-                              type="number"
-                              min="1"
-                              step="1"
-                              class="allocation-qty-input"
-                              @input="setBatchTransferPlannedQuantity(row, $event?.target?.value)"
-                            />
-                          </label>
+                          <small>单价 ¥ {{ formatMoney(row.unitPrice) }} · 发货库存 {{ Number(row.sourceStock || 0) }} · 已分配 {{ batchTransferRowAssignedQuantity(row) }}</small>
+                          <small>品牌 {{ row.brand || '-' }} · 系列 {{ row.series || '-' }}</small>
                         </div>
                       </div>
                     </template>
@@ -875,17 +871,18 @@
                   <el-table-column
                     v-for="target in selectedBatchTransferTargets"
                     :key="`batch-transfer-target-column-${target.id}`"
-                    :label="displayShopName(target.name)"
+                    :label="simplifyShopName(target.name) || displayShopName(target.name)"
                     min-width="150"
                     align="center"
                   >
                     <el-table-column label="变动库存" min-width="112" align="center">
                       <template #default="{ row }">
                         <input
-                          :value="String(getBatchTransferQuantity(row, target.id))"
+                          :value="getBatchTransferQuantityInputValue(row, target.id)"
                           type="number"
                           min="0"
                           step="1"
+                          placeholder="0"
                           class="allocation-qty-input"
                           @input="setBatchTransferQuantity(row, target.id, $event?.target?.value)"
                         />
@@ -2046,6 +2043,12 @@
         <button type="button" class="work-order-category-card" @click="openMobileOrderDetail">
           <strong>查看工单</strong>
         </button>
+        <button v-if="activeMobileOrder && canRestoreRow(activeMobileOrder)" type="button" class="work-order-category-card" @click="restoreMobileOrder">
+          <strong>恢复工单</strong>
+        </button>
+        <button v-if="activeMobileOrder && canPermanentlyDeleteRow(activeMobileOrder)" type="button" class="work-order-category-card danger" @click="permanentlyDeleteMobileOrder">
+          <strong>彻底删除</strong>
+        </button>
         <button v-if="activeMobileOrder && canAllocateRow(activeMobileOrder)" type="button" class="work-order-category-card" @click="allocateMobileOrder">
           <strong>分配工单</strong>
         </button>
@@ -2547,11 +2550,11 @@
               </div>
               <div v-if="detailOrder.sourceShopName" class="work-order-detail-item">
                 <span>{{ detailSourceLabel() }}</span>
-                <strong>{{ displayShopName(detailOrder.sourceShopName) }}</strong>
+                <strong>{{ formatWorkOrderShopName(detailOrder.sourceShopName) }}</strong>
               </div>
               <div v-if="detailOrder.targetShopName" class="work-order-detail-item">
                 <span>{{ detailTargetLabel() }}</span>
-                <strong>{{ displayShopName(detailOrder.targetShopName) }}</strong>
+                <strong>{{ formatWorkOrderShopName(detailOrder.targetShopName) }}</strong>
               </div>
               <div v-if="detailOrder.supplierName" class="work-order-detail-item">
                 <span>供货单位</span>
@@ -2611,7 +2614,9 @@
                   min-width="170"
                   show-overflow-tooltip
                   sortable="custom"
-                />
+                >
+                  <template #default="{ row }">{{ formatWorkOrderShopName(row.saleShopName) || '-' }}</template>
+                </el-table-column>
                 <el-table-column
                   v-if="detailUsesReceiveShopColumn"
                   prop="receiveShopName"
@@ -2619,7 +2624,9 @@
                   min-width="170"
                   show-overflow-tooltip
                   sortable="custom"
-                />
+                >
+                  <template #default="{ row }">{{ formatWorkOrderShopName(row.receiveShopName) || '-' }}</template>
+                </el-table-column>
                 <el-table-column
                   prop="goodsName"
                   label="商品名称"
@@ -2650,7 +2657,9 @@
                 <el-table-column v-if="detailOrder.orderType === 'purchase'" prop="series" label="系列" min-width="140" sortable="custom" />
                 <el-table-column prop="barcode" label="条码" min-width="160" show-overflow-tooltip sortable="custom" />
                 <el-table-column v-if="detailIsSaleAffectingInventory" prop="channel" label="渠道" min-width="110" show-overflow-tooltip sortable="custom" />
-                <el-table-column v-if="detailIsSaleAffectingInventory" prop="shipShopName" label="发货店铺/仓库" min-width="170" show-overflow-tooltip sortable="custom" />
+                <el-table-column v-if="detailIsSaleAffectingInventory" prop="shipShopName" label="发货店铺/仓库" min-width="170" show-overflow-tooltip sortable="custom">
+                  <template #default="{ row }">{{ formatWorkOrderShopName(row.shipShopName) || '-' }}</template>
+                </el-table-column>
                 <el-table-column v-if="detailIsSaleAffectingInventory" prop="customerName" label="客户姓名" min-width="120" show-overflow-tooltip sortable="custom" />
                 <el-table-column prop="remark" label="备注" min-width="160" show-overflow-tooltip sortable="custom" />
               </el-table>
@@ -2687,8 +2696,12 @@
                 <el-table :data="detailIncomingItems" border stripe show-summary :summary-method="detailTableSummary" @sort-change="onDetailTableSortChange">
                   <el-table-column prop="orderNum" label="订单号" min-width="180" show-overflow-tooltip sortable="custom" />
                   <el-table-column prop="salesperson" label="销售员" min-width="120" show-overflow-tooltip sortable="custom" />
-                  <el-table-column prop="saleShopName" label="销售店铺" min-width="170" show-overflow-tooltip sortable="custom" />
-                  <el-table-column prop="receiveShopName" label="收货店铺/仓库" min-width="170" show-overflow-tooltip sortable="custom" />
+                  <el-table-column prop="saleShopName" label="销售店铺" min-width="170" show-overflow-tooltip sortable="custom">
+                    <template #default="{ row }">{{ formatWorkOrderShopName(row.saleShopName) || '-' }}</template>
+                  </el-table-column>
+                  <el-table-column prop="receiveShopName" label="收货店铺/仓库" min-width="170" show-overflow-tooltip sortable="custom">
+                    <template #default="{ row }">{{ formatWorkOrderShopName(row.receiveShopName) || '-' }}</template>
+                  </el-table-column>
                   <el-table-column prop="receivedAmount" label="实付金额" min-width="110" sortable="custom">
                     <template #default="{ row }">¥ {{ formatMoney(row.receivedAmount) }}</template>
                   </el-table-column>
@@ -2737,8 +2750,12 @@
                     <template #default="{ row }">¥ {{ formatMoney(row.couponAmount) }}</template>
                   </el-table-column>
                   <el-table-column prop="discountRate" label="折扣" min-width="90" sortable="custom" />
-                  <el-table-column prop="saleShopName" label="销售店铺" min-width="170" show-overflow-tooltip sortable="custom" />
-                  <el-table-column prop="shipShopName" label="发货店铺" min-width="170" show-overflow-tooltip sortable="custom" />
+                  <el-table-column prop="saleShopName" label="销售店铺" min-width="170" show-overflow-tooltip sortable="custom">
+                    <template #default="{ row }">{{ formatWorkOrderShopName(row.saleShopName) || '-' }}</template>
+                  </el-table-column>
+                  <el-table-column prop="shipShopName" label="发货店铺" min-width="170" show-overflow-tooltip sortable="custom">
+                    <template #default="{ row }">{{ formatWorkOrderShopName(row.shipShopName) || '-' }}</template>
+                  </el-table-column>
                   <el-table-column prop="salesperson" label="销售员" min-width="120" show-overflow-tooltip sortable="custom" />
                   <el-table-column prop="customerName" label="客户姓名" min-width="120" show-overflow-tooltip sortable="custom" />
                   <el-table-column prop="barcode" label="条码" min-width="160" show-overflow-tooltip sortable="custom" />
@@ -3369,6 +3386,7 @@ import { resolveTableActionWidth } from '../utils/tableActions'
 import {
   displayShopName,
   replaceShopNameAliases,
+  simplifyShopName,
   SHOP_TYPE_OTHER_WAREHOUSE,
   SHOP_TYPE_REPAIR,
   SHOP_TYPE_WAREHOUSE,
@@ -3642,6 +3660,8 @@ const tableActionWidth = computed(() => resolveTableActionWidth(
     row.id ? (canEditRow(row) ? '编辑' : '') : '编辑',
     row.id ? (canWithdrawRow(row) ? '转草稿' : '') : '转草稿',
     row.id ? (canDeleteRow(row) ? '删除' : '') : '删除',
+    row.id ? (canRestoreRow(row) ? '恢复' : '') : '恢复',
+    row.id ? (canPermanentlyDeleteRow(row) ? '彻底删除' : '') : '彻底删除',
     row.id ? (canReviewRow(row) ? '审批' : '') : '审批',
     '打印',
   ]),
@@ -3692,6 +3712,7 @@ const dashboard = reactive({
   draftCount: 0,
   pendingCount: 0,
   approvalCount: 0,
+  trashCount: 0,
   recentMine: [],
   pendingApprovals: [],
 })
@@ -3793,6 +3814,7 @@ const allocationRows = ref([])
 
 const canApprove = computed(() => authStore.can('workorders.approve'))
 const canWrite = computed(() => authStore.can('workorders.write'))
+const canRead = computed(() => authStore.can('workorders.read'))
 const canManageScheduledOrders = computed(() => canWrite.value && authStore.isAdmin)
 const canFilterApprover = computed(() => authStore.isAdmin)
 const groupInviteOptions = computed(() => (
@@ -4067,7 +4089,7 @@ const goodsPickerSecondaryDistributionShopId = computed(() => (
 const goodsPickerSecondaryQuantityLabel = computed(() => (
   form.orderType === 'transfer' ? '收货库存' : ''
 ))
-const statusFilterLocked = computed(() => ['draft', 'pending', 'approver'].includes(scope.value))
+const statusFilterLocked = computed(() => ['draft', 'pending', 'approver', 'trash'].includes(scope.value))
 const activeScopeLabel = computed(() => {
   const matched = scopeOptions.value.find((item) => item.value === scope.value)
   return matched?.label || '我的工单'
@@ -4142,6 +4164,7 @@ const scopeOptions = computed(() => {
   if (authStore.isAdmin) {
     items.push({ value: 'all', label: '全部记录' })
   }
+  items.push({ value: 'trash', label: '废纸篓', badge: dashboard.trashCount })
   return items
 })
 
@@ -4156,6 +4179,7 @@ function scopeDisplayLabel(item) {
     draft: '草稿',
     approver: '待我审',
     all: '全部',
+    trash: '废纸篓',
   }[value] || item?.label || ''
 }
 
@@ -4449,13 +4473,17 @@ function upsertLocalMockWorkOrderFromPayload(orderId, payload, statusValue) {
 function filterLocalMockWorkOrders(rows) {
   let result = [...rows]
   if (scope.value === 'draft') {
-    result = result.filter((item) => ['draft', 'rejected'].includes(String(item.status)))
+    result = result.filter((item) => !item.deletedAt && ['draft', 'rejected'].includes(String(item.status)))
   } else if (scope.value === 'pending') {
-    result = result.filter((item) => String(item.status) === 'pending' && Number(item.applicantId) === localTestCurrentUserId())
+    result = result.filter((item) => !item.deletedAt && String(item.status) === 'pending' && Number(item.applicantId) === localTestCurrentUserId())
   } else if (scope.value === 'approver') {
-    result = result.filter((item) => String(item.status) === 'pending' && Number(item.approverId) === localTestCurrentUserId())
+    result = result.filter((item) => !item.deletedAt && String(item.status) === 'pending' && Number(item.approverId) === localTestCurrentUserId())
+  } else if (scope.value === 'trash') {
+    result = result.filter((item) => item.deletedAt && Number(item.deletedById || 0) === localTestCurrentUserId())
   } else if (scope.value === 'mine') {
-    result = result.filter((item) => Number(item.applicantId) === localTestCurrentUserId())
+    result = result.filter((item) => !item.deletedAt && Number(item.applicantId) === localTestCurrentUserId())
+  } else {
+    result = result.filter((item) => !item.deletedAt)
   }
   if (orderTypeFilter.value) {
     result = result.filter((item) => item.orderType === orderTypeFilter.value)
@@ -4606,9 +4634,9 @@ function mobileItemDetailRows(item) {
     rows.push({ label, value: text || '-' })
   }
   add('订单号', item.orderNum, { show: mobileRowUsesSalesRecord(item) })
-  add('销售店铺', displayShopName(item.saleShopName), { show: mobileRowShowSalesFields(item) })
-  add('收货店铺/仓库', displayShopName(item.receiveShopName), { show: mobileRowShowReceiveShop(item) })
-  add('发货店铺/仓库', displayShopName(item.shipShopName), { show: mobileRowShowShipShop(item) })
+  add('销售店铺', formatWorkOrderShopName(item.saleShopName), { show: mobileRowShowSalesFields(item) })
+  add('收货店铺/仓库', formatWorkOrderShopName(item.receiveShopName), { show: mobileRowShowReceiveShop(item) })
+  add('发货店铺/仓库', formatWorkOrderShopName(item.shipShopName), { show: mobileRowShowShipShop(item) })
   add('销售员', item.salesperson, { show: mobileRowShowSalesFields(item) })
   add('商品名称', item.goodsName)
   add('商品编码', item.productCode)
@@ -4755,6 +4783,22 @@ function deleteMobileOrder() {
   closeMobileOrderActions()
   if (row?.id) {
     confirmDeleteOrder(row)
+  }
+}
+
+function restoreMobileOrder() {
+  const row = activeMobileOrder.value
+  closeMobileOrderActions()
+  if (row?.id) {
+    confirmRestoreOrder(row)
+  }
+}
+
+function permanentlyDeleteMobileOrder() {
+  const row = activeMobileOrder.value
+  closeMobileOrderActions()
+  if (row?.id) {
+    confirmPermanentlyDeleteOrder(row)
   }
 }
 
@@ -5127,6 +5171,10 @@ function formatDateLabel(value) {
 
 function formatMoney(value) {
   return Number(value || 0).toFixed(2)
+}
+
+function formatWorkOrderShopName(value) {
+  return simplifyShopName(value) || displayShopName(value)
 }
 
 function toFiniteNumber(value, fallback = 0) {
@@ -5821,6 +5869,11 @@ function getBatchTransferQuantity(row, shopId) {
   return Math.max(0, Number(getBatchTransferAllocation(row, shopId)?.quantity || 0))
 }
 
+function getBatchTransferQuantityInputValue(row, shopId) {
+  const quantity = getBatchTransferQuantity(row, shopId)
+  return quantity > 0 ? String(quantity) : ''
+}
+
 function setBatchTransferQuantity(row, shopId, nextValue) {
   ensureBatchTransferAllocations(row)
   const allocation = getBatchTransferAllocation(row, shopId)
@@ -5829,6 +5882,7 @@ function setBatchTransferQuantity(row, shopId, nextValue) {
   }
   const parsed = Number.parseInt(String(nextValue ?? '').trim(), 10)
   allocation.quantity = Math.max(0, Number.isFinite(parsed) ? parsed : 0)
+  row.quantity = batchTransferRowAssignedQuantity(row)
   syncRowAmount(row)
 }
 
@@ -5869,7 +5923,7 @@ function buildBatchTransferPayload(statusValue) {
         series: row.series || '',
         barcode: row.barcode || '',
         unitPrice: Number(row.unitPrice || 0),
-        quantity: Math.max(1, Number(row.quantity || 1)),
+        quantity: batchTransferRowAssignedQuantity(row),
         remark: row.remark || '',
         targets: selectedBatchTransferTargets.value.map((target) => ({
           shopId: Number(target.id || 0),
@@ -7968,6 +8022,7 @@ function applyBatchTransferDraftResponse(payload) {
 function canEditRow(row) {
   return (
     canWrite.value &&
+    !row.deletedAt &&
     ['draft', 'rejected'].includes(row.status) &&
     (
       Number(row.applicantId || 0) === Number(authStore.user?.id || 0) ||
@@ -7979,6 +8034,7 @@ function canEditRow(row) {
 function canAllocateRow(row) {
   return (
     canWrite.value &&
+    !row?.deletedAt &&
     String(row?.status || '') === 'approved' &&
     !row?.isBatchTransfer &&
     ['purchase', 'transfer'].includes(String(row?.orderType || ''))
@@ -7988,6 +8044,7 @@ function canAllocateRow(row) {
 function canReviewRow(row) {
   return (
     canApprove.value &&
+    !row.deletedAt &&
     row.status === 'pending' &&
     Number(row.approverId || 0) === Number(authStore.user?.id || 0)
   )
@@ -7996,6 +8053,7 @@ function canReviewRow(row) {
 function canWithdrawRow(row) {
   return (
     canWrite.value &&
+    !row.deletedAt &&
     row.status === 'pending' &&
     Number(row.applicantId || 0) === Number(authStore.user?.id || 0)
   )
@@ -8006,11 +8064,20 @@ function canDeleteRow(row) {
   const isSharedGroupDraft = accessibleGroupIds.value.has(Number(row.groupId || 0))
   return (
     canWrite.value &&
+    !row.deletedAt &&
     (
       (['draft', 'rejected'].includes(String(row.status || '')) && (isApplicant || isSharedGroupDraft)) ||
       (String(row.status || '') === 'pending' && isApplicant)
     )
   )
+}
+
+function canRestoreRow(row) {
+  return canRead.value && row?.deletedAt && Number(row.deletedById || 0) === Number(authStore.user?.id || 0)
+}
+
+function canPermanentlyDeleteRow(row) {
+  return canRestoreRow(row)
 }
 
 function setScope(nextScope) {
@@ -8099,6 +8166,7 @@ async function loadDashboard() {
       dashboard.draftCount = rows.filter((item) => ['draft', 'rejected'].includes(String(item.status))).length
       dashboard.pendingCount = rows.filter((item) => String(item.status) === 'pending').length
       dashboard.approvalCount = rows.filter((item) => String(item.status) === 'pending').length
+      dashboard.trashCount = rows.filter((item) => item.deletedAt).length
       dashboard.recentMine = rows.slice(0, 3)
       dashboard.pendingApprovals = rows.filter((item) => String(item.status) === 'pending').slice(0, 3)
     }
@@ -8107,6 +8175,7 @@ async function loadDashboard() {
   dashboard.draftCount = Number(payload.draftCount || 0)
   dashboard.pendingCount = Number(payload.pendingCount || 0)
   dashboard.approvalCount = Number(payload.approvalCount || 0)
+  dashboard.trashCount = Number(payload.trashCount || 0)
   dashboard.recentMine = payload.recentMine || []
   dashboard.pendingApprovals = payload.pendingApprovals || []
   if (localTestMockWorkOrdersEnabled && !dashboard.recentMine.length && !dashboard.pendingApprovals.length) {
@@ -8114,6 +8183,7 @@ async function loadDashboard() {
     dashboard.draftCount = Math.max(dashboard.draftCount, rows.filter((item) => ['draft', 'rejected'].includes(String(item.status))).length)
     dashboard.pendingCount = Math.max(dashboard.pendingCount, rows.filter((item) => String(item.status) === 'pending').length)
     dashboard.approvalCount = Math.max(dashboard.approvalCount, rows.filter((item) => String(item.status) === 'pending').length)
+    dashboard.trashCount = Math.max(dashboard.trashCount, rows.filter((item) => item.deletedAt).length)
     dashboard.recentMine = rows.slice(0, 3)
     dashboard.pendingApprovals = rows.filter((item) => String(item.status) === 'pending').slice(0, 3)
   }
@@ -9304,8 +9374,8 @@ async function confirmWithdrawOrder(row) {
 
 async function confirmDeleteOrder(row) {
   const message = row.status === 'pending'
-    ? '确认删除这张待审批工单吗？删除后会撤销当前审批流程，且无法恢复。'
-    : '确认删除这张草稿工单吗？删除后无法恢复。'
+    ? '确认删除这张待审批工单吗？删除后会进入废纸篓保留 10 天。'
+    : '确认删除这张草稿工单吗？删除后会进入废纸篓保留 10 天。'
   try {
     await confirmDestructiveAction(message, '删除工单')
   } catch {
@@ -9320,8 +9390,13 @@ async function confirmDeleteOrder(row) {
   if (!result?.success && localTestMockWorkOrdersEnabled) {
     const index = localTestWorkOrderState.value.findIndex((item) => Number(item.id || 0) === Number(row.id || 0))
     if (index >= 0) {
-      localTestWorkOrderState.value.splice(index, 1)
-      result = { success: true, message: '本地测试工单已删除' }
+      localTestWorkOrderState.value.splice(index, 1, {
+        ...localTestWorkOrderState.value[index],
+        deletedAt: new Date().toISOString(),
+        deletedById: localTestCurrentUserId(),
+        deletedByName: localTestCurrentUserName(),
+      })
+      result = { success: true, message: '本地测试工单已移入废纸篓' }
     }
   }
   if (!result?.success) {
@@ -9332,7 +9407,69 @@ async function confirmDeleteOrder(row) {
     detailVisible.value = false
     detailOrder.value = null
   }
-  ElMessage.success(result.message || '工单已删除')
+  ElMessage.success(result.message || '工单已移入废纸篓')
+  await Promise.all([loadDashboard(), loadOrders()])
+}
+
+async function confirmRestoreOrder(row) {
+  try {
+    await confirmAction('确认恢复这张工单吗？恢复后会回到原来的工单列表。', '恢复工单', '确认恢复')
+  } catch {
+    return
+  }
+  let result = null
+  try {
+    result = await apiPost(`/work-orders/${row.id}/restore`, {}, { token: authStore.token })
+  } catch {
+    result = null
+  }
+  if (!result?.success && localTestMockWorkOrdersEnabled) {
+    const index = localTestWorkOrderState.value.findIndex((item) => Number(item.id || 0) === Number(row.id || 0))
+    if (index >= 0) {
+      const nextRow = { ...localTestWorkOrderState.value[index] }
+      delete nextRow.deletedAt
+      delete nextRow.deletedById
+      delete nextRow.deletedByName
+      localTestWorkOrderState.value.splice(index, 1, nextRow)
+      result = { success: true, message: '本地测试工单已恢复' }
+    }
+  }
+  if (!result?.success) {
+    ElMessage.error(result?.message || '工单恢复失败')
+    return
+  }
+  ElMessage.success(result.message || '工单已恢复')
+  await Promise.all([loadDashboard(), loadOrders()])
+}
+
+async function confirmPermanentlyDeleteOrder(row) {
+  try {
+    await confirmDestructiveAction('确认彻底删除这张工单吗？此操作不可恢复。', '彻底删除')
+  } catch {
+    return
+  }
+  let result = null
+  try {
+    result = await apiDelete(`/work-orders/${row.id}/permanent`, { token: authStore.token })
+  } catch {
+    result = null
+  }
+  if (!result?.success && localTestMockWorkOrdersEnabled) {
+    const index = localTestWorkOrderState.value.findIndex((item) => Number(item.id || 0) === Number(row.id || 0))
+    if (index >= 0) {
+      localTestWorkOrderState.value.splice(index, 1)
+      result = { success: true, message: '本地测试工单已彻底删除' }
+    }
+  }
+  if (!result?.success) {
+    ElMessage.error(result?.message || '工单彻底删除失败')
+    return
+  }
+  if (detailOrder.value && Number(detailOrder.value.id) === Number(row.id)) {
+    detailVisible.value = false
+    detailOrder.value = null
+  }
+  ElMessage.success(result.message || '工单已彻底删除')
   await Promise.all([loadDashboard(), loadOrders()])
 }
 

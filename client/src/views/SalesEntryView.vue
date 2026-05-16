@@ -64,18 +64,6 @@
 
             <el-form label-position="top" class="mobile-sales-form" @submit.prevent="onSubmit" @keydown.enter="handleEntryFormEnter">
               <div class="mobile-sales-amount-row">
-                <label class="mobile-sales-amount-field">
-                  <span>实收金额</span>
-                  <el-input
-                    :model-value="receivedAmountDisplayValue"
-                    :placeholder="`¥ ${formatMoney(form.receivableAmount)}`"
-                    inputmode="decimal"
-                    class="sales-entry-amount-input mobile-sales-amount-input"
-                    @input="onReceivedAmountInput"
-                    @focus="onReceivedAmountFocus"
-                    @blur="onReceivedAmountBlur"
-                  />
-                </label>
                 <label class="mobile-sales-quantity-field">
                   <span>数量</span>
                   <el-input
@@ -86,6 +74,18 @@
                     @input="onMobileQuantityInput"
                     @focus="onMobileQuantityFocus"
                     @blur="onMobileQuantityBlur"
+                  />
+                </label>
+                <label class="mobile-sales-amount-field">
+                  <span>实收金额</span>
+                  <el-input
+                    :model-value="receivedAmountDisplayValue"
+                    :placeholder="`¥ ${formatMoney(form.receivableAmount)}`"
+                    inputmode="decimal"
+                    class="sales-entry-amount-input mobile-sales-amount-input"
+                    @input="onReceivedAmountInput"
+                    @focus="onReceivedAmountFocus"
+                    @blur="onReceivedAmountBlur"
                   />
                 </label>
               </div>
@@ -2046,6 +2046,16 @@ async function handleMobileBack() {
   if (mobileStep.value > 1) {
     if (await confirmMobileDiscard('当前销售录入尚未完成，确认返回上一步吗？')) {
       mobileStep.value -= 1
+      if (mobileStep.value === 1) {
+        clearSelectedGoods()
+        searchKeyword.value = ''
+        suggestions.value = []
+        hasSearchedSuggestions.value = false
+        mobileSearchExpanded.value = false
+        mobileProductSheetVisible.value = false
+        mobileScannerSheetVisible.value = false
+        scannerResultText.value = ''
+      }
     }
     return
   }

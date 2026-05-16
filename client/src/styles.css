@@ -357,7 +357,7 @@
 
   .mobile-sales-amount-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 64px;
+    grid-template-columns: 64px minmax(0, 1fr);
     gap: 10px;
     align-items: end;
   }
@@ -12615,7 +12615,7 @@ button.work-order-type-card {
 
   .mobile-sales-amount-row {
     display: grid !important;
-    grid-template-columns: minmax(0, 1fr) 64px !important;
+    grid-template-columns: 64px minmax(0, 1fr) !important;
     gap: 10px !important;
     align-items: end !important;
   }

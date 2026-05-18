@@ -2156,20 +2156,22 @@
             <strong>{{ mobileGoodsCandidateTitle }}</strong>
             <span>{{ mobileGoodsCandidateSubtitle }}</span>
           </div>
+          <label class="mobile-work-order-form-field mobile-work-order-quantity-field">
+            <span>数量</span>
+            <el-input
+              :model-value="mobileGoodsQuantityDisplayValue"
+              inputmode="numeric"
+              class="mobile-work-order-long-input"
+              @focus="onMobileGoodsQuantityFocus"
+              @input="onMobileGoodsQuantityInput"
+              @blur="onMobileGoodsQuantityBlur"
+            />
+          </label>
           <div class="mobile-sales-status-grid mobile-work-order-stock-grid">
             <article><span>{{ mobileGoodsPrimaryStockLabel }}</span><strong>{{ Number(activeMobileGoodsCandidate.shopQuantity ?? activeMobileGoodsCandidate.sourceStock ?? 0) }}</strong></article>
             <article><span>{{ mobileGoodsSecondaryStockLabel }}</span><strong>{{ Number(activeMobileGoodsCandidate.secondaryShopQuantity ?? activeMobileGoodsCandidate.targetStock ?? 0) }}</strong></article>
             <article class="wide"><span>价格</span><strong>¥ {{ formatMoney(activeMobileGoodsCandidate.price) }}</strong></article>
           </div>
-          <label class="mobile-work-order-form-field">
-            <span>数量</span>
-            <el-input
-              v-model="mobileGoodsQuantityInput"
-              inputmode="numeric"
-              class="mobile-work-order-long-input"
-              @input="onMobileGoodsQuantityInput"
-            />
-          </label>
         </section>
       </section>
       <template #footer>
@@ -2340,7 +2342,14 @@
         <div class="mobile-work-order-edit-grid">
           <label class="mobile-work-order-form-field">
             <span>数量</span>
-            <el-input v-model="activeMobileItem.quantity" inputmode="numeric" class="mobile-work-order-long-input" @input="syncRowAmount(activeMobileItem)" />
+            <el-input
+              :model-value="mobileItemQuantityDisplayValue(activeMobileItem)"
+              inputmode="numeric"
+              class="mobile-work-order-long-input"
+              @focus="onMobileItemQuantityFocus(activeMobileItem)"
+              @input="(value) => onMobileItemQuantityInput(activeMobileItem, value)"
+              @blur="onMobileItemQuantityBlur(activeMobileItem)"
+            />
           </label>
           <label class="mobile-work-order-form-field">
             <span>单位</span>
@@ -3581,6 +3590,8 @@ const mobileGoodsSearchLoading = ref(false)
 const mobileGoodsSearchInputRef = ref(null)
 const activeMobileGoodsCandidate = ref(null)
 const mobileGoodsQuantityInput = ref('1')
+const mobileGoodsQuantityManuallyEdited = ref(false)
+const mobileItemQuantityDrafts = ref({})
 const mobileScannerResultText = ref('')
 const mobileOrderPickerVisible = ref(false)
 const mobileOrderPickerTarget = ref('default')
@@ -3999,6 +4010,9 @@ const mobileGoodsCandidateSubtitle = computed(() => {
     `¥ ${formatMoney(item.price)}`,
   ].filter(Boolean).join(' · ')
 })
+const mobileGoodsQuantityDisplayValue = computed(() => (
+  mobileGoodsQuantityManuallyEdited.value ? mobileGoodsQuantityInput.value : '1'
+))
 const mobileGoodsPrimaryStockLabel = computed(() => {
   if (form.orderType === 'transfer') return '发货库存'
   if (form.orderType === 'purchase') return '收货库存'
@@ -4708,6 +4722,7 @@ function resetMobileGoodsCandidate() {
   activeMobileGoodsCandidate.value = null
   mobileScannerResultText.value = ''
   mobileGoodsQuantityInput.value = '1'
+  mobileGoodsQuantityManuallyEdited.value = false
   mobileGoodsSearchKeyword.value = ''
   mobileGoodsSearchResults.value = []
 }
@@ -4929,13 +4944,107 @@ function selectMobileGoodsCandidate(item) {
   activeMobileGoodsCandidate.value = normalized
   mobileScannerResultText.value = normalized.barcode || mobileScannerResultText.value
   mobileGoodsQuantityInput.value = '1'
+  mobileGoodsQuantityManuallyEdited.value = false
   mobileGoodsSearchKeyword.value = ''
   mobileGoodsSearchResults.value = []
 }
 
+function normalizeMobileQuantityInput(value) {
+  return String(value || '').replace(/\D/g, '').slice(0, 7)
+}
+
+function resolveMobileQuantityValue(value) {
+  const parsed = Number(value || 0)
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return 1
+  }
+  return Math.min(Math.floor(parsed), 1000000)
+}
+
+function onMobileGoodsQuantityFocus() {
+  if (!mobileGoodsQuantityManuallyEdited.value) {
+    mobileGoodsQuantityInput.value = ''
+  }
+}
+
 function onMobileGoodsQuantityInput(value) {
-  const normalized = Math.max(Number.parseInt(String(value || '1').replace(/[^\d]/g, ''), 10) || 1, 1)
-  mobileGoodsQuantityInput.value = String(normalized)
+  mobileGoodsQuantityInput.value = normalizeMobileQuantityInput(value)
+  mobileGoodsQuantityManuallyEdited.value = true
+}
+
+function onMobileGoodsQuantityBlur() {
+  if (!String(mobileGoodsQuantityInput.value || '').trim()) {
+    mobileGoodsQuantityInput.value = '1'
+    mobileGoodsQuantityManuallyEdited.value = false
+    return
+  }
+  mobileGoodsQuantityInput.value = String(resolveMobileQuantityValue(mobileGoodsQuantityInput.value))
+}
+
+function mobileItemQuantityKey(row) {
+  return String(row?.localId || '')
+}
+
+function mobileItemQuantityDisplayValue(row) {
+  const key = mobileItemQuantityKey(row)
+  if (key && Object.prototype.hasOwnProperty.call(mobileItemQuantityDrafts.value, key)) {
+    return mobileItemQuantityDrafts.value[key]
+  }
+  return String(resolveMobileQuantityValue(row?.quantity))
+}
+
+function setMobileItemQuantityDraft(row, value) {
+  const key = mobileItemQuantityKey(row)
+  if (!key) {
+    return
+  }
+  mobileItemQuantityDrafts.value = {
+    ...mobileItemQuantityDrafts.value,
+    [key]: value,
+  }
+}
+
+function clearMobileItemQuantityDraft(row) {
+  const key = mobileItemQuantityKey(row)
+  if (!key || !Object.prototype.hasOwnProperty.call(mobileItemQuantityDrafts.value, key)) {
+    return
+  }
+  const nextDrafts = { ...mobileItemQuantityDrafts.value }
+  delete nextDrafts[key]
+  mobileItemQuantityDrafts.value = nextDrafts
+}
+
+function onMobileItemQuantityFocus(row) {
+  if (resolveMobileQuantityValue(row?.quantity) === 1) {
+    setMobileItemQuantityDraft(row, '')
+  }
+}
+
+function onMobileItemQuantityInput(row, value) {
+  if (!row) {
+    return
+  }
+  const normalized = normalizeMobileQuantityInput(value)
+  setMobileItemQuantityDraft(row, normalized)
+  row.quantity = resolveMobileQuantityValue(normalized)
+  syncRowAmount(row)
+}
+
+function onMobileItemQuantityBlur(row) {
+  if (!row) {
+    return
+  }
+  const currentValue = mobileItemQuantityDisplayValue(row)
+  if (!String(currentValue || '').trim()) {
+    row.quantity = 1
+    clearMobileItemQuantityDraft(row)
+    syncRowAmount(row)
+    return
+  }
+  const quantity = resolveMobileQuantityValue(currentValue)
+  row.quantity = quantity
+  setMobileItemQuantityDraft(row, String(quantity))
+  syncRowAmount(row)
 }
 
 function findReusableMobileEditorRow(target = 'default') {
@@ -4977,7 +5086,7 @@ async function confirmMobileGoodsCandidate() {
   }
   const target = mobileGoodsEntryTarget.value || 'default'
   const row = createMobileEditorEntryRow(target)
-  const quantity = Math.max(Number(mobileGoodsQuantityInput.value || 1), 1)
+  const quantity = resolveMobileQuantityValue(mobileGoodsQuantityInput.value)
   fillRowFromGoods(row, await enrichGoodsWithStocks({
     ...candidate,
     quantity,

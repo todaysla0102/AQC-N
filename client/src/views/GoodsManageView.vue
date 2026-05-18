@@ -897,19 +897,27 @@
               />
             </el-form-item>
 
-            <section class="dialog-span-full goods-image-manager">
+            <section
+              class="dialog-span-full goods-image-manager"
+              :class="{ dragging: imageDragActive }"
+              @dragenter.prevent="onGoodsImageDragEnter"
+              @dragover.prevent="onGoodsImageDragOver"
+              @dragleave.prevent="onGoodsImageDragLeave"
+              @drop.prevent="onGoodsImageDrop"
+            >
               <header>
                 <div>
                   <span>商品图片</span>
                   <p>用于商品详情和移动端录入销售展示，可设置主图或删除旧图。</p>
                 </div>
-                <el-button type="primary" plain :loading="imageUploading" @click="openImageUploadPicker">添加图片</el-button>
+                <el-button type="primary" class="goods-image-upload-button" :loading="imageUploading" @click="openImageUploadPicker">添加图片</el-button>
               </header>
               <input
                 ref="imageUploadInputRef"
                 class="goods-image-file-input"
                 type="file"
                 accept="image/*"
+                multiple
                 @change="onGoodsImageFileChange"
               />
               <div v-if="formImageItems.length" class="goods-image-grid">
@@ -922,7 +930,7 @@
                   </div>
                 </article>
               </div>
-              <div v-else class="goods-image-empty">暂无商品图片</div>
+              <div v-else class="goods-image-empty">暂无商品图片，可拖入图片添加</div>
             </section>
 
             <el-form-item label="条码" class="dialog-span-full">
@@ -1532,6 +1540,7 @@ const editMenuVisible = ref(false)
 const editMenuTarget = ref(null)
 const imageUploadInputRef = ref(null)
 const imageUploading = ref(false)
+const imageDragActive = ref(false)
 const activeMobileGoods = ref(null)
 const mobileGoodsActionVisible = ref(false)
 const mobileGoodsDetailVisible = ref(false)
@@ -3119,34 +3128,91 @@ function removeGoodsImage(url) {
   syncFormImages(images)
 }
 
+function isSupportedGoodsImageFile(file) {
+  if (!String(file.type || '').startsWith('image/')) {
+    return false
+  }
+  return true
+}
+
+async function uploadGoodsImageFile(file) {
+  const payload = await apiUpload(`/goods/items/${editingId.value}/images/upload`, file, {
+    token: authStore.token,
+    timeoutMs: 30000,
+  })
+  if (!payload?.success || !payload.url) {
+    ElMessage.error(payload?.message || '图片上传失败')
+    return false
+  }
+  const images = normalizeGoodsImages(form.imageList, form.coverImage)
+  syncFormImages([...images, payload.url])
+  return true
+}
+
+async function uploadGoodsImageFiles(fileList) {
+  if (!editingId.value) {
+    ElMessage.warning('请先打开要编辑的商品')
+    return
+  }
+  const files = Array.from(fileList || []).filter(Boolean)
+  if (!files.length) {
+    return
+  }
+  const imageFiles = files.filter(isSupportedGoodsImageFile)
+  if (!imageFiles.length) {
+    ElMessage.warning('请选择图片文件')
+    return
+  }
+  if (imageFiles.length !== files.length) {
+    ElMessage.warning('已跳过非图片文件')
+  }
+
+  imageUploading.value = true
+  let successCount = 0
+  try {
+    for (const file of imageFiles) {
+      // Keep uploads sequential so image order matches the user's selection/drop order.
+      if (await uploadGoodsImageFile(file)) {
+        successCount += 1
+      }
+    }
+  } finally {
+    imageUploading.value = false
+  }
+  if (successCount > 0) {
+    ElMessage.success(successCount === 1 ? '图片上传成功' : `已上传 ${successCount} 张图片`)
+  }
+}
+
 function openImageUploadPicker() {
   imageUploadInputRef.value?.click?.()
 }
 
 async function onGoodsImageFileChange(event) {
-  const file = event?.target?.files?.[0]
-  if (!file || !editingId.value) {
-    return
-  }
-  if (!String(file.type || '').startsWith('image/')) {
-    ElMessage.warning('请选择图片文件')
+  await uploadGoodsImageFiles(event?.target?.files)
+  if (event?.target) {
     event.target.value = ''
+  }
+}
+
+function onGoodsImageDragEnter() {
+  imageDragActive.value = true
+}
+
+function onGoodsImageDragOver() {
+  imageDragActive.value = true
+}
+
+function onGoodsImageDragLeave(event) {
+  if (event?.currentTarget?.contains?.(event.relatedTarget)) {
     return
   }
-  imageUploading.value = true
-  const payload = await apiUpload(`/goods/items/${editingId.value}/images/upload`, file, {
-    token: authStore.token,
-    timeoutMs: 30000,
-  })
-  imageUploading.value = false
-  event.target.value = ''
-  if (!payload?.success || !payload.url) {
-    ElMessage.error(payload?.message || '图片上传失败')
-    return
-  }
-  const images = normalizeGoodsImages(form.imageList, form.coverImage)
-  syncFormImages([...images, payload.url])
-  ElMessage.success(payload.message || '图片上传成功')
+  imageDragActive.value = false
+}
+
+async function onGoodsImageDrop(event) {
+  imageDragActive.value = false
+  await uploadGoodsImageFiles(event?.dataTransfer?.files)
 }
 
 async function fetchInventoryPayload(itemId) {

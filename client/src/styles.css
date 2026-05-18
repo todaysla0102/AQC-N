@@ -1162,9 +1162,15 @@
 
   .mobile-work-order-long-input .el-input__inner,
   .mobile-work-order-long-control .el-input__inner {
-    font-size: 15px !important;
+    color: var(--text-primary);
+    font-size: 16px !important;
     font-weight: 700;
     text-align: left;
+  }
+
+  .mobile-work-order-long-control .el-select__placeholder,
+  .mobile-work-order-long-control .el-select__selected-item {
+    font-size: 16px !important;
   }
 
   .mobile-work-order-search-area {
@@ -1185,6 +1191,7 @@
 
   .mobile-work-order-quantity-field {
     width: 100%;
+    grid-column: 1 / -1;
   }
 
   .mobile-work-order-stock-grid article strong {
@@ -2643,7 +2650,7 @@ img.theme-sensitive-logo {
 
 .global-search-input-shell {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   gap: 12px;
   align-items: center;
   padding: 15px 16px;
@@ -2674,7 +2681,8 @@ img.theme-sensitive-logo {
   font-weight: 600;
 }
 
-.global-search-clear {
+.global-search-clear,
+.global-search-scan {
   width: 36px;
   height: 36px;
   border: 1px solid var(--border-light);
@@ -2685,6 +2693,16 @@ img.theme-sensitive-logo {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+}
+
+.global-search-scan {
+  background: color-mix(in srgb, var(--field-bg) 88%, var(--accent-color));
+}
+
+.global-search-clear:hover,
+.global-search-scan:hover {
+  border-color: color-mix(in srgb, var(--accent-color) 36%, var(--border-color));
+  color: var(--text-primary);
 }
 
 .global-search-empty {
@@ -8919,6 +8937,13 @@ button.work-order-type-card {
   background: color-mix(in srgb, var(--field-bg) 82%, transparent);
   display: grid;
   gap: 14px;
+  transition: var(--transition);
+}
+
+.goods-image-manager.dragging {
+  border-color: color-mix(in srgb, var(--accent-color) 58%, var(--border-color));
+  background: color-mix(in srgb, var(--highlight-bg) 70%, var(--field-bg));
+  box-shadow: 0 16px 34px rgba(17, 17, 17, 0.08);
 }
 
 .goods-image-manager header {
@@ -8938,6 +8963,18 @@ button.work-order-type-card {
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.6;
+}
+
+.goods-image-upload-button.el-button--primary {
+  --el-button-bg-color: var(--button-primary-bg);
+  --el-button-border-color: var(--button-primary-bg);
+  --el-button-text-color: var(--button-primary-text);
+  --el-button-hover-bg-color: var(--button-primary-hover);
+  --el-button-hover-border-color: var(--button-primary-hover);
+  --el-button-hover-text-color: var(--button-primary-text);
+  --el-button-active-bg-color: var(--button-primary-hover);
+  --el-button-active-border-color: var(--button-primary-hover);
+  --el-button-active-text-color: var(--button-primary-text);
 }
 
 .goods-image-file-input {

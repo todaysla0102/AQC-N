@@ -452,6 +452,15 @@
           >
             <el-icon><Close /></el-icon>
           </button>
+          <button
+            v-if="isMobileViewport"
+            type="button"
+            class="global-search-scan"
+            aria-label="扫描条码"
+            @click="openGlobalSearchScanner"
+          >
+            <el-icon><Camera /></el-icon>
+          </button>
         </div>
 
         <div
@@ -512,6 +521,34 @@
         </div>
       </div>
     </el-dialog>
+
+    <MobileBottomSheet
+      v-if="isMobileViewport"
+      v-model="globalSearchScannerVisible"
+      title="扫描条码"
+      subtitle="全局搜索"
+      :initial-snap="0.72"
+      :expanded-snap="0.92"
+      @closed="closeGlobalSearchScanner"
+    >
+      <section class="global-search-scanner-sheet">
+        <div class="scanner-stage scanner-modal-stage" :class="{ interactive: globalSearchScannerManualFocusSupported }" @click="onGlobalSearchScannerStageFocus">
+          <video ref="globalSearchScannerVideoRef" playsinline muted></video>
+          <div class="scanner-reticle scanner-reticle-barcode" aria-hidden="true"></div>
+          <span v-if="globalSearchScannerManualFocusSupported" class="scanner-focus-badge">点按画面手动对焦</span>
+        </div>
+        <p class="scan-hint scanner-modal-hint">{{ globalSearchScannerHint }}</p>
+        <div class="scanner-result-card" :class="{ empty: !globalSearchScannerResultText }">
+          <span>扫码结果</span>
+          <strong>{{ globalSearchScannerResultText || '等待识别条码' }}</strong>
+        </div>
+      </section>
+      <template #footer>
+        <div class="form-actions mobile-sales-sheet-actions">
+          <el-button @click="globalSearchScannerVisible = false">关闭</el-button>
+        </div>
+      </template>
+    </MobileBottomSheet>
 
     <ResponsiveDialog
       v-model="searchGoodsActionMenuVisible"
@@ -709,6 +746,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 
 import Dw5000Clock from '../components/DW5000Clock.vue'
+import MobileBottomSheet from '../components/MobileBottomSheet.vue'
 import ResponsiveDialog from '../components/ResponsiveDialog.vue'
 import { useMobileViewport } from '../composables/useMobileViewport'
 import { useBarcodeScanner } from '../composables/useBarcodeScanner'
@@ -780,6 +818,8 @@ const settingsMenuVisible = ref(false)
 const settingsMenuStyle = ref({})
 const headerPanelSection = ref('settings')
 const searchVisible = ref(false)
+const globalSearchScannerVisible = ref(false)
+const globalSearchScannerResultText = ref('')
 const updateLogVisible = ref(false)
 const symuseQrLoginVisible = ref(false)
 const updateLogLoading = ref(false)
@@ -1158,6 +1198,28 @@ const {
 } = useBarcodeScanner({
   formats: [BarcodeFormat.QR_CODE],
   onDetected: handleSymuseQrDetected,
+})
+
+const {
+  videoRef: globalSearchScannerVideoRef,
+  scannerHint: globalSearchScannerHint,
+  scannerManualFocusSupported: globalSearchScannerManualFocusSupported,
+  startScanner: startGlobalSearchScanner,
+  stopScanner: stopGlobalSearchScanner,
+  focusScannerAt: focusGlobalSearchScannerAt,
+} = useBarcodeScanner({
+  onDetected: async (code) => {
+    const normalizedCode = normalizeSearchText(code)
+    if (!normalizedCode) {
+      return
+    }
+    globalSearchScannerResultText.value = normalizedCode
+    searchKeyword.value = normalizedCode
+    globalSearchScannerVisible.value = false
+    await stopGlobalSearchScanner()
+    await nextTick()
+    globalSearchScannerResultText.value = ''
+  },
 })
 
 async function restartSymuseQrScanner() {
@@ -2169,6 +2231,22 @@ function openGlobalSearch() {
   focusGlobalSearchInput()
 }
 
+async function openGlobalSearchScanner() {
+  globalSearchScannerResultText.value = ''
+  globalSearchScannerVisible.value = true
+  await nextTick()
+  await startGlobalSearchScanner()
+}
+
+async function closeGlobalSearchScanner() {
+  await stopGlobalSearchScanner()
+  globalSearchScannerResultText.value = ''
+}
+
+async function onGlobalSearchScannerStageFocus(event) {
+  await focusGlobalSearchScannerAt(event)
+}
+
 function openUpdateLogDialog() {
   updateLogVisible.value = true
   closeSettingsMenu()
@@ -2439,6 +2517,8 @@ watch(searchVisible, (value) => {
     return
   }
   clearSearchFocusTimers()
+  globalSearchScannerVisible.value = false
+  void closeGlobalSearchScanner()
   if (preserveSearchDistributionOnClose.value) {
     preserveSearchDistributionOnClose.value = false
   } else {
@@ -2557,6 +2637,7 @@ onBeforeUnmount(() => {
     clearInterval(notificationRefreshTimer)
     notificationRefreshTimer = null
   }
+  stopGlobalSearchScanner()
   stopSymuseQrScanner()
 })
 </script>

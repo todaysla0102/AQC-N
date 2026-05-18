@@ -87,6 +87,12 @@ def _can_manage_group(auth: CurrentAuth, membership: AqcGroupMember | None) -> b
     return membership.member_role in {"owner", "admin"}
 
 
+def _can_invite_group(auth: CurrentAuth, membership: AqcGroupMember | None) -> bool:
+    if _is_global_admin(auth.user):
+        return True
+    return membership is not None
+
+
 def _normalize_invite_ids(user_ids: list[int], current_user_id: int) -> list[int]:
     seen: set[int] = set()
     result: list[int] = []
@@ -232,14 +238,14 @@ def create_group(
     )
     db.add(group)
     db.flush()
-    db.add(
-        AqcGroupMember(
-            group_id=group.id,
-            user_id=auth.user.id,
-            member_role="owner",
-            is_default=False,
-        )
+    owner_member = AqcGroupMember(
+        group_id=group.id,
+        user_id=auth.user.id,
+        member_role="owner",
+        is_default=False,
     )
+    db.add(owner_member)
+    db.flush()
     invited_user_ids = _create_group_invitation_notifications(
         db,
         group=group,
@@ -254,7 +260,8 @@ def create_group(
         ).limit(1)
     ).scalar()
     if has_default is None:
-        _set_user_default_group(db, user_id=int(auth.user.id), group_id=int(group.id))
+        _clear_user_default_group(db, int(auth.user.id))
+        owner_member.is_default = True
     db.commit()
     db.refresh(group)
 
@@ -395,8 +402,8 @@ def invite_group_members(
 ):
     group = _get_group_or_404(db, group_id)
     my_member = _get_member(db, group_id, auth.user.id)
-    if not _can_manage_group(auth, my_member):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="没有权限管理该分组")
+    if not _can_invite_group(auth, my_member):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="没有权限邀请该分组成员")
 
     invited_user_ids = _create_group_invitation_notifications(
         db,

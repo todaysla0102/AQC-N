@@ -17,9 +17,7 @@ def clean_goods_text(value: str | None, max_length: int) -> str:
 
 def normalize_goods_attribute(value: str | None) -> str:
     clean_value = clean_goods_text(value, 8)
-    if clean_value in {GOODS_ATTRIBUTE_BAO, GOODS_ATTRIBUTE_CHANG}:
-        return clean_value
-    return GOODS_ATTRIBUTE_NONE
+    return clean_value or GOODS_ATTRIBUTE_NONE
 
 
 def split_model_attribute(

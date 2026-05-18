@@ -3221,7 +3221,7 @@
                 编辑
               </el-button>
               <el-button
-                v-if="canManageGroup(item)"
+                v-if="canInviteGroup(item)"
                 @click="openInviteGroupDialog(item)"
               >
                 邀请成员
@@ -8672,6 +8672,10 @@ function resolveGroupRoleLabel(role) {
 
 function canManageGroup(group) {
   return ['owner', 'admin'].includes(String(group?.memberRole || ''))
+}
+
+function canInviteGroup(group) {
+  return authStore.isAdmin || Boolean(group?.memberRole)
 }
 
 function openGroupDialog() {

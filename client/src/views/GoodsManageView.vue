@@ -693,9 +693,18 @@
               </el-form-item>
 
               <el-form-item label="属性">
-                <el-select v-model="form.modelAttribute" class="full-width">
+                <el-select
+                  v-model="form.modelAttribute"
+                  filterable
+                  allow-create
+                  default-first-option
+                  clearable
+                  class="full-width"
+                  placeholder="选择或输入属性"
+                  @change="onModelAttributeChange"
+                >
                   <el-option
-                    v-for="option in goodsAttributeOptions"
+                    v-for="option in goodsAttributeSelectOptions"
                     :key="option.value"
                     :label="option.label"
                     :value="option.value"
@@ -876,9 +885,18 @@
             </el-form-item>
 
             <el-form-item label="属性">
-              <el-select v-model="form.modelAttribute" class="full-width">
+              <el-select
+                v-model="form.modelAttribute"
+                filterable
+                allow-create
+                default-first-option
+                clearable
+                class="full-width"
+                placeholder="选择或输入属性"
+                @change="onModelAttributeChange"
+              >
                 <el-option
-                  v-for="option in goodsAttributeOptions"
+                  v-for="option in goodsAttributeSelectOptions"
                   :key="option.value"
                   :label="option.label"
                   :value="option.value"
@@ -1614,6 +1632,7 @@ const meta = reactive({
 const dialogMeta = reactive({
   brandOptions: [],
   seriesOptions: [],
+  attributeOptions: [],
 })
 
 const form = reactive({
@@ -1693,6 +1712,23 @@ async function onDialogScannerStageFocus(event) {
 const displayName = computed(() => buildItemName(form))
 const propertyDialogTitle = computed(() => '商品属性与图片')
 const resolvedBarcodePreview = computed(() => cleanText(form.barcode))
+const goodsAttributeSelectOptions = computed(() => {
+  const optionMap = new Map()
+  const addOption = (rawOption) => {
+    const rawValue = typeof rawOption === 'string' ? rawOption : rawOption?.value
+    const value = normalizeModelAttribute(rawValue)
+    if (!value || optionMap.has(value)) {
+      return
+    }
+    const rawLabel = typeof rawOption === 'string' ? rawOption : rawOption?.label
+    optionMap.set(value, { value, label: cleanText(rawLabel) || value })
+  }
+  goodsAttributeOptions.forEach(addOption)
+  meta.attributeOptions.forEach(addOption)
+  dialogMeta.attributeOptions.forEach(addOption)
+  addOption(form.modelAttribute)
+  return Array.from(optionMap.values())
+})
 const salesRangePresetOptions = [
   { value: 'all', label: '总销量' },
   { value: 'yesterday', label: '昨日' },
@@ -1896,6 +1932,14 @@ function formatMoney(value) {
 
 function cleanText(value) {
   return String(value || '').trim()
+}
+
+function normalizeModelAttribute(value) {
+  return cleanText(value).slice(0, 8) || '-'
+}
+
+function onModelAttributeChange(value) {
+  form.modelAttribute = normalizeModelAttribute(value)
 }
 
 function parseGoodsImageList(value) {
@@ -2614,6 +2658,7 @@ async function loadDialogMeta(brand = '') {
     }
     dialogMeta.brandOptions = payload.brandOptions || []
     dialogMeta.seriesOptions = payload.seriesOptions || []
+    dialogMeta.attributeOptions = payload.attributeOptions || []
   } finally {
     if (dialogMetaAbortController === controller) {
       dialogMetaAbortController = null
